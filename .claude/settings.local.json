@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "Bash(python3 *)",
+      "Bash(powershell.exe *)",
+      "Bash(pip install *)",
+      "Bash(C:/Python311/python.exe *)",
+      "Bash(xargs grep -l -i \"limo\\\\|ros\\\\|cmd_vel\\\\|robot\\\\|json\")",
+      "Bash(xargs grep -l -i \"limo\\\\|ros2\\\\|cmd_vel\\\\|twist\")"
+    ]
+  }
+}

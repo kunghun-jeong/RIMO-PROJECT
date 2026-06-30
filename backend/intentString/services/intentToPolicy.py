@@ -24,7 +24,7 @@ KGTriple:
 with open(RULES_PATH, "w", encoding="utf-8") as f:
     f.write(mapping_rules)
 
-print(f"✅ Mapping rules saved at: {RULES_PATH.resolve()}")
+print(f"[OK] Mapping rules saved at: {RULES_PATH.resolve()}")
 
 # ✅ 4. 나머지 매핑 로직 (경로는 RULES_PATH 사용)
 from dataclasses import dataclass, field, asdict
