@@ -6,12 +6,16 @@ import re
 from regex import R
 from pprint import pprint
 import json
+import os
 from flask import Flask,request
 from bson.json_util import dumps
 from flask_cors import CORS
 from dict2xml import dict2xml
 import generatorv2
+import socketAPI
 from flask import Response
+
+POLICY_DIR = os.path.join(os.path.dirname(__file__), "LowLevelPolicy")
 
 
 companies = [{"id":1, "name": "Company One"}, {"id": 2, "name": "Company Two"}]
@@ -22,10 +26,10 @@ CORS(api)
 @api.route('/url/get', methods = ['GET'])
 def restGetURLGroup():
     query = request.json
-    client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
     db = client["endpoint"]
     col = db["url"]
-    
+
     query = {query} #{"name":key}
     res = col.find_one(query)
     
@@ -36,7 +40,7 @@ def restInsertURLGroup():
     try:
         data = request.json
         print(data)
-        client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
         db = client["endpoint"]
         col = db["url"]
         
@@ -47,7 +51,7 @@ def restInsertURLGroup():
 
 @api.route('/nsfDB/get', methods = ['GET'])
 def restGetAllCapability(query={}):
-    client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
     db = client["nsfDB"]
     col = db["capabilities"]
     result = {}
@@ -60,7 +64,7 @@ def restGetAllCapability(query={}):
 def restInsertUserGroup():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
         db = client["endpoint"]
         col = db["user"]
         
@@ -73,7 +77,7 @@ def restInsertUserGroup():
 @api.route('/user/get', methods = ['GET'])
 def restGetUserGroup():
     
-    client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
     db = client["endpoint"]
     col = db["user"]
     query = request.json
@@ -84,7 +88,7 @@ def restGetUserGroup():
 def restInsertLocationGroup():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
         db = client["endpoint"]
         col = db["location"]
         
@@ -95,7 +99,7 @@ def restInsertLocationGroup():
 
 @api.route('/location/get', methods = ['GET'])
 def restGetLocationGroup():
-    client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
     db = client["endpoint"]
     col = db["location"]
     query = request.json
@@ -108,7 +112,7 @@ def restGetLocationGroup():
 def restInsertCapability():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://172.17.20.250:27017/")
+        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
         db = client["nsfDB"]
         col = db["capabilities"]
         print(data)
@@ -137,6 +141,34 @@ def restInsertConfiguration():
     #     print(x)
     #     print(y)
     return result
+
+# 다른 팀이 생성한 ROS2 .sh 파일을 받아서 LIMO에 실행
+# POST body: {"command": "forward"}  → ros2_commands/forward.sh 실행
+@api.route('/policy/deploy', methods=['POST'])
+def deployPolicy():
+    data = request.json
+    if not data or 'command' not in data:
+        return Response('{"error": "command 필드가 필요합니다 (예: \\"forward\\")"}',
+                        status=400, mimetype='application/json')
+
+    command = data['command']
+    sh_path = socketAPI.get_ros2_file_path(command)
+
+    # 다른 팀이 생성한 .sh 파일 내용을 요청에 포함한 경우 저장
+    sh_content = data.get('sh_content', '')
+    if sh_content:
+        os.makedirs(os.path.dirname(sh_path), exist_ok=True)
+        with open(sh_path, 'w', encoding='utf-8') as f:
+            f.write(sh_content)
+        print(f"[DEPLOY] ROS2 파일 저장: {sh_path}")
+
+    success, message = socketAPI.execute_ros2_file(sh_path)
+    if success:
+        return Response(json.dumps({"status": "success", "command": command, "message": message}),
+                        status=200, mimetype='application/json')
+    else:
+        return Response(json.dumps({"status": "failed", "command": command, "message": message}),
+                        status=500, mimetype='application/json')
 
 def cleanNullTerms(d):
    clean = {}
@@ -170,9 +202,9 @@ def main(argv):
         print(f"Invalid interface value. The value must be: {ni.interfaces()}")
         sys.exit()
   if ip == '':
-    print(f"""Put the IP address or interface.\nUsage:\nRestAPI.py [--ip <ip-address>|--if <interface-name>]""")
-  else:
-    api.run(host=ip)
+    ip = '127.0.0.1'
+    print(f"IP 미지정 → 기본값 {ip}:5000 으로 실행")
+  api.run(host=ip, port=5000)
 
 if __name__== '__main__':
   main(sys.argv[1:])

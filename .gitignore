@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyc
+.env
+.env.*
+venv/
+env/
+.venv/
+db.sqlite3
+backend/intent_logs/
+node_modules/

@@ -69,6 +69,7 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
         print(f"Payload: {payload}")
         print("=======================================================\n")
 
+        deploy_result = {"status": "skipped", "reason": "AI 서버 호출 실패"}
         try:
             response = requests.post(external_url, json=payload, timeout=5)
             external_response = json.loads(response.text)
@@ -90,6 +91,22 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
                 yaml_result
             )
 
+            # 리모카에 ROS2 명령 전송 (hardcoded: forward)
+            # 다른 팀이 command 이름을 넘겨주면 그 이름으로 교체 예정
+            command_name = "forward"
+            deploy_result = {"status": "skipped", "reason": "deploy 미시도"}
+            try:
+                deploy_resp = requests.post(
+                    "http://127.0.0.1:5000/policy/deploy",
+                    json={"command": command_name},
+                    timeout=15
+                )
+                deploy_result = deploy_resp.json()
+                print(f"[DEPLOY] 리모카 전송 결과: {deploy_result}")
+            except Exception as e:
+                deploy_result = {"status": "failed", "message": str(e)}
+                print(f"[DEPLOY] 리모카 전송 실패: {e}")
+
             # --- DB 저장 optional ---
             safe_create(
                 PolicyIntent,
@@ -110,6 +127,7 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
             "sent_to": external_url,
             "external_payload": payload,
             "external_response": external_response,
+            "rimoca_deploy": deploy_result,
         }, status=status.HTTP_201_CREATED)
 
 
