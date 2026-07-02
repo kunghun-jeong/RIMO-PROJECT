@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, ApplicationIntentSerializer, PolicyIntentSerializer
 from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
+from .services.connection import action_to_cmd_vel, send_to_limo
+from .services.limo_llm import aot_to_limo_command
 import requests
 import json
 from django.conf import settings
@@ -70,23 +72,29 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
         print("=======================================================\n")
 
         try:
-            response = requests.post(external_url, json=payload, timeout=5)
+            response = requests.post(external_url, json=payload, timeout=30)
             external_response = json.loads(response.text)
 
             intent = external_response.get("Intent", {})
             triple = external_response.get("KGTriple", {})
             confidence = external_response.get("confidence", 1.0)
 
+            # Llama로 AoT → LIMO 명령 해석
+            limo_cmd = aot_to_limo_command(intent)
+            cmd_vel = action_to_cmd_vel(limo_cmd["command"])
+            send_to_limo(cmd_vel, duration=limo_cmd.get("duration", 2.0))
+
+            print(f"[LIMO] command={limo_cmd['command']} speed={limo_cmd['speed']} duration={limo_cmd['duration']}")
+
             policy = map_intent_struct_to_policy(intent, triple, confidence)
             yaml_result = generate_yaml(policy)
 
             safe_write_txt(
-                f"policy_external.txt",
+                "policy_external.txt",
                 json.dumps(external_response, indent=4, ensure_ascii=False)
             )
-
             safe_write_txt(
-                f"policy_yaml.txt",
+                "policy_yaml.txt",
                 yaml_result
             )
 
@@ -102,14 +110,20 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
             )
 
         except Exception as e:
+            import traceback
+            print(f"[ERROR] {e}")
+            traceback.print_exc()
             external_response = f"Failed to send: {e}"
-
+            limo_cmd = {"command": "stop", "speed": 0.0, "duration": 0}
+            cmd_vel = None
 
         return Response({
             "saved": serializer.data,
             "sent_to": external_url,
             "external_payload": payload,
             "external_response": external_response,
+            "limo_command": limo_cmd,
+            "cmd_vel": cmd_vel,
         }, status=status.HTTP_201_CREATED)
 
 
@@ -145,7 +159,7 @@ class NetworkIntentViewSet(viewsets.ModelViewSet):
         print("=======================================================\n")
 
         try:
-            response = requests.post(external_url, json=payload, timeout=5)
+            response = requests.post(external_url, json=payload, timeout=30)
             external_response = json.loads(response.text)
         except Exception as e:
             external_response = f"Failed to send: {e}"
@@ -199,7 +213,7 @@ class ApplicationIntentViewSet(viewsets.ModelViewSet):
         print("=======================================================\n")
 
         try:
-            response = requests.post(external_url, json=payload, timeout=5)
+            response = requests.post(external_url, json=payload, timeout=30)
             external_response = json.loads(response.text)
         except Exception as e:
             external_response = f"Failed to send: {e}"
