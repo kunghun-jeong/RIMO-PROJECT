@@ -2,15 +2,15 @@ import yaml
 import os
 
 # LIMO 연결 정보 (연결 시 IP 변경)
-LIMO_HOST = "192.168.50.190"
+LIMO_HOST = "192.168.50.165"
 LIMO_PORT = 9090  # rosbridge 기본 포트
 
 # cmd_vel 매핑 테이블
 ACTION_MAP = {
     "go straight": {"linear": {"x": 0.5, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.0}},
     "stop":        {"linear": {"x": 0.0, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.0}},
-    "turn left":   {"linear": {"x": 0.0, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.5}},
-    "turn right":  {"linear": {"x": 0.0, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": -0.5}},
+    "turn left":   {"linear": {"x": 0.3, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.5}},
+    "turn right":  {"linear": {"x": 0.3, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": -0.5}},
     "move back":   {"linear": {"x": -0.5, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.0}},
 }
 
@@ -24,12 +24,12 @@ def extract_action(policy: dict) -> str:
     try:
         return policy["intentActions"][0]["actionType"].lower()
     except (KeyError, IndexError, TypeError):
-        return "stop"
+        return "go straight"
 
 
 def action_to_cmd_vel(action: str) -> dict:
     # 매핑 테이블에 없으면 stop
-    return ACTION_MAP.get(action, ACTION_MAP["stop"])
+    return ACTION_MAP.get(action, ACTION_MAP["go straight"])
 
 
 def send_to_limo(cmd_vel: dict, duration: float = 2.0) -> bool:

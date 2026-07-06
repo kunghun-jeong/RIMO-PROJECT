@@ -1,17 +1,19 @@
 from django.shortcuts import render
 from django.http import HttpResponse
 from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, ApplicationIntentSerializer, PolicyIntentSerializer
 from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
-from .services.connection import action_to_cmd_vel, send_to_limo
-from .services.limo_llm import aot_to_limo_command
+from .services.connection import action_to_cmd_vel, send_to_limo, run as limo_run
+from .services.limo_llm import natural_to_limo_command
 import requests
 import json
 from django.conf import settings
 import yaml
 import os
+
 
 # Create your views here.
 def test(request):
@@ -55,14 +57,11 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
     serializer_class = NaturalIntentSerializer
 
     def create(self, request, *args, **kwargs):
-        # 1) 프론트에서 받은 값을 serializer로 검증
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # DB 저장을 optional 처리
         intent_obj = safe_save(serializer)
 
-        # 전송용 payload
         payload = serializer.data
 
         external_url = "http://115.145.179.159:5050/infer"
@@ -79,13 +78,6 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
             triple = external_response.get("KGTriple", {})
             confidence = external_response.get("confidence", 1.0)
 
-            # Llama로 AoT → LIMO 명령 해석
-            limo_cmd = aot_to_limo_command(intent)
-            cmd_vel = action_to_cmd_vel(limo_cmd["command"])
-            send_to_limo(cmd_vel, duration=limo_cmd.get("duration", 2.0))
-
-            print(f"[LIMO] command={limo_cmd['command']} speed={limo_cmd['speed']} duration={limo_cmd['duration']}")
-
             policy = map_intent_struct_to_policy(intent, triple, confidence)
             yaml_result = generate_yaml(policy)
 
@@ -98,7 +90,9 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
                 yaml_result
             )
 
-            # --- DB 저장 optional ---
+            yaml_path = os.path.join(settings.BASE_DIR, "intent_logs", "policy_yaml.txt")
+            limo_run(yaml_path)
+
             safe_create(
                 PolicyIntent,
                 action=intent.get("Action", ""),
@@ -110,22 +104,14 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
             )
 
         except Exception as e:
-            import traceback
-            print(f"[ERROR] {e}")
-            traceback.print_exc()
             external_response = f"Failed to send: {e}"
-            limo_cmd = {"command": "stop", "speed": 0.0, "duration": 0}
-            cmd_vel = None
 
         return Response({
             "saved": serializer.data,
             "sent_to": external_url,
             "external_payload": payload,
             "external_response": external_response,
-            "limo_command": limo_cmd,
-            "cmd_vel": cmd_vel,
         }, status=status.HTTP_201_CREATED)
-
 
 
 class NetworkIntentViewSet(viewsets.ModelViewSet):
@@ -147,7 +133,6 @@ class NetworkIntentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=obj)
         serializer.is_valid(raise_exception=True)
 
-        # DB save optional
         intent_obj = safe_save(serializer)
 
         payload = {"intent": serializer.data}
@@ -170,7 +155,8 @@ class NetworkIntentViewSet(viewsets.ModelViewSet):
             "external_payload": payload,
             "external_response": external_response,
         }, status=status.HTTP_201_CREATED)
-    
+
+
 class ApplicationIntentViewSet(viewsets.ModelViewSet):
     queryset = NetworkIntent.objects.all()
     serializer_class = ApplicationIntentSerializer
@@ -183,7 +169,7 @@ class ApplicationIntentViewSet(viewsets.ModelViewSet):
             "expectation_id": data.get("expectation_id", ""),
             "expectation_verb": data.get("expectation_verb", ""),
             "object_type": data.get("object_type", ""),
-            
+
             "context_attribute" : data["context_attributes"][0].get("contextAttribute", ""),
             "context_condition" : data["context_attributes"][0].get("contextCondition", ""),
             "context_targer_id" : data["context_attributes"][0].get("contextValueRange", ""),
@@ -201,7 +187,6 @@ class ApplicationIntentViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=obj)
         serializer.is_valid(raise_exception=True)
 
-        # DB save optional
         intent_obj = safe_save(serializer)
 
         payload = {"intent": serializer.data}
@@ -222,10 +207,32 @@ class ApplicationIntentViewSet(viewsets.ModelViewSet):
         print(f"External Response: {external_response}")
         print("=======================================================\n")
 
-
         return Response({
             "saved": serializer.data,
             "sent_to": external_url,
             "external_payload": payload,
             "external_response": external_response,
         }, status=status.HTTP_201_CREATED)
+
+
+class LimoDirectView(APIView):
+    def post(self, request):
+        text = request.data.get("text", "").strip()
+        if not text:
+            return Response({"error": "text field required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        limo_cmd = natural_to_limo_command(text)
+        cmd_vel = action_to_cmd_vel(limo_cmd["command"])
+        success = send_to_limo(cmd_vel, duration=limo_cmd["duration"])
+
+        from django.utils import timezone
+        safe_create(NaturalIntent, user="limo_direct", intent=text[:50], timestamp=timezone.now())
+
+        return Response({
+            "input": text,
+            "command": limo_cmd["command"],
+            "speed": limo_cmd["speed"],
+            "duration": limo_cmd["duration"],
+            "cmd_vel": cmd_vel,
+            "limo_success": success,
+        }, status=status.HTTP_200_OK)
