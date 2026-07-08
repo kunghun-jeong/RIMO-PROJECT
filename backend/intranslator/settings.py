@@ -106,16 +106,8 @@ WSGI_APPLICATION = 'intranslator.wsgi.application'
 # DATABASES = {} 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'intentDB',  #데이터베이스 네임
-        'USER': 'intent', #계정
-        'PASSWORD': 'intent', #패스워드
-        'HOST': '', #공백으로 냅두면 default localhost
-        'PORT': '3306', #공백으로 냅두면 default 3306
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-            'use_unicode': True
-        }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 

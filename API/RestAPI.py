@@ -1,7 +1,6 @@
 import pymongo
 import netifaces as ni
 import sys, getopt
-import netifaces as ni
 import re
 from regex import R
 from pprint import pprint
@@ -23,16 +22,19 @@ companies = [{"id":1, "name": "Company One"}, {"id": 2, "name": "Company Two"}]
 api = Flask(__name__)
 CORS(api)
 
+MONGO_URI = "mongodb://127.0.0.1:27017/"
+
 @api.route('/url/get', methods = ['GET'])
 def restGetURLGroup():
     query = request.json
-    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+    client = pymongo.MongoClient(MONGO_URI)
     db = client["endpoint"]
     col = db["url"]
 
     query = {query} #{"name":key}
     res = col.find_one(query)
-    
+
     return json.loads(dumps(res))
 
 @api.route('/url/put', methods = ['PUT'])
@@ -40,10 +42,11 @@ def restInsertURLGroup():
     try:
         data = request.json
         print(data)
-        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+        client = pymongo.MongoClient(MONGO_URI)
         db = client["endpoint"]
         col = db["url"]
-        
+
         res = col.insert_one(data)
         return "Success"
     except pymongo.errors.DuplicateKeyError:
@@ -51,7 +54,8 @@ def restInsertURLGroup():
 
 @api.route('/nsfDB/get', methods = ['GET'])
 def restGetAllCapability(query={}):
-    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+    client = pymongo.MongoClient(MONGO_URI)
     db = client["nsfDB"]
     col = db["capabilities"]
     result = {}
@@ -64,20 +68,22 @@ def restGetAllCapability(query={}):
 def restInsertUserGroup():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+        client = pymongo.MongoClient(MONGO_URI)
         db = client["endpoint"]
         col = db["user"]
-        
+
         res = col.insert_one(data)
         return "Success"
     except pymongo.errors.DuplicateKeyError:
         return "Duplicate Key for ",data["name"]
-        
+
 
 @api.route('/user/get', methods = ['GET'])
 def restGetUserGroup():
-    
-    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+
+    client = pymongo.MongoClient(MONGO_URI)
     db = client["endpoint"]
     col = db["user"]
     query = request.json
@@ -88,10 +94,11 @@ def restGetUserGroup():
 def restInsertLocationGroup():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+        client = pymongo.MongoClient(MONGO_URI)
         db = client["endpoint"]
         col = db["location"]
-        
+
         res = col.insert_one(data)
         return "Success"
     except pymongo.errors.DuplicateKeyError:
@@ -99,7 +106,8 @@ def restInsertLocationGroup():
 
 @api.route('/location/get', methods = ['GET'])
 def restGetLocationGroup():
-    client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+    client = pymongo.MongoClient(MONGO_URI)
     db = client["endpoint"]
     col = db["location"]
     query = request.json
@@ -112,7 +120,8 @@ def restGetLocationGroup():
 def restInsertCapability():
     try:
         data = request.json
-        client = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
+
+        client = pymongo.MongoClient(MONGO_URI)
         db = client["nsfDB"]
         col = db["capabilities"]
         print(data)

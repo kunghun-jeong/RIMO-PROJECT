@@ -19,14 +19,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from intentString import views as intent_views
+from intentString.views import LimoDirectView
 
 router = DefaultRouter()
 router.register(r'NaturalIntent', intent_views.NaturalIntentViewSet, 'NaturalIntent')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # path('api/upload/', views.upload_file, name='upload_file'),
-    # path('api/intents/', views.get_intents, name='get_intents'),
-    # path('',views.home, name='home'),
-    path('api/', include(router.urls))
+    path('api/limo/', LimoDirectView.as_view(), name='limo-direct'),
+    path('api/', include(router.urls)),
 ]

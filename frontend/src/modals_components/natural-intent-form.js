@@ -1,118 +1,93 @@
 import React, { useState } from "react";
 import "./group-forms.css";
+import LimoModal from "./limomodal";
 
 function NaturalIntentForm({ mode, closeNaturalModal }) {
-  const [inputType, setInputType] = useState("");
   const [inputText, setInputText] = useState("");
-  const [convertedResult, setConvertedResult] = useState("");
+  const [limoData, setLimoData] = useState(null);
+  const [showLimoModal, setShowLimoModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (inputType !== "text") {
-      alert("Please select TEXT as input type first.");
-      return;
-    }
-
     if (!inputText.trim()) {
-      alert("Please enter your intent.");
+      setError("명령을 입력하세요.");
       return;
     }
+
+    setLoading(true);
+    setError("");
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/NaturalIntent/", {
+      const response = await fetch("http://127.0.0.1:8000/api/limo/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user: "frontend_test",
-          intent: inputText,
-          timestamp: new Date().toISOString(),
-        }),
+        body: JSON.stringify({ text: inputText }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setConvertedResult(JSON.stringify(data, null, 2));
-      } else {
-        alert("Failed to convert intent.");
-      }
-    } catch (error) {
-      console.error(error);
-      alert("Server connection failed.");
+      const data = await response.json();
+      setLimoData(data);
+      setShowLimoModal(true);
+    } catch (err) {
+      console.error(err);
+      setError("서버 연결에 실패했습니다.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ margin: "20px" }}>
-      <h3>Natural Language Intent</h3>
+    <div style={{ margin: "20px", minWidth: "400px" }}>
+      <h3 style={{ marginBottom: "16px" }}>자연어로 LIMO 제어</h3>
 
-      {/* Input type selection → dropdown */}
-      <div style={{ marginBottom: "20px" }}>
-        <label style={{ display: "block", marginBottom: "8px" }}>
-          Select input type:
-        </label>
-
-        <select
-          value={inputType}
-          onChange={(e) => setInputType(e.target.value)}
-          style={{
-            width: "200px",
-            height: "20px",
-            fontSize: "16px",
-          }}
-        >
-          <option value="">Choose Input Type</option>
-          <option value="text">Text</option>
-          <option value="voice" disabled>
-            Voice (coming soon)
-          </option>
-        </select>
-      </div>
+      <p style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginBottom: "16px" }}>
+        예시: "앞으로 가줘", "왼쪽으로 돌아", "멈춰", "go forward for 3 seconds"
+      </p>
 
       <form onSubmit={handleSubmit}>
-        {inputType === "text" && (
-          <div style={{ marginBottom: "15px" }}>
-            <label>Text Intent</label>
-            <textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="e.g., 'Continuously monitor the position of SDV_001'"
-              style={{ width: "100%", height: "120px" }}
-            />
-          </div>
+        <textarea
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="자연어 명령을 입력하세요..."
+          rows={4}
+          style={{
+            width: "100%",
+            padding: "10px",
+            fontSize: "15px",
+            borderRadius: "8px",
+            border: "1px solid #ccc",
+            resize: "vertical",
+            boxSizing: "border-box",
+            background: mode === "dark" ? "#444" : "#fff",
+            color: mode === "dark" ? "#fff" : "#000",
+          }}
+        />
+
+        {error && (
+          <p style={{ color: "crimson", fontSize: "13px", marginTop: "6px" }}>{error}</p>
         )}
 
-        <footer className="footer">
+        <footer className="footer" style={{ marginTop: "16px" }}>
           <button
             type="submit"
+            disabled={loading}
             className={mode === "dark" ? "dark-button" : "light-button"}
-            style={{ marginTop: "20px" }}
           >
-            Submit
+            {loading ? "처리 중..." : "전송"}
           </button>
         </footer>
       </form>
 
-      {convertedResult && (
-        <div className="converted-output">
-          <h3>Converted Output</h3>
-          <pre
-            style={{
-              background: "#eee",
-              padding: "15px",
-              borderRadius: "8px",
-              marginTop: "20px",
-              maxWidth: "800px",
-
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-            }}
-          >
-            {convertedResult}
-          </pre>
-        </div>
+      {showLimoModal && (
+        <LimoModal
+          closeModal={setShowLimoModal}
+          data={limoData}
+          mode={mode}
+        />
       )}
     </div>
   );
 }
+
 export default NaturalIntentForm;

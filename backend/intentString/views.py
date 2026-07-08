@@ -1,22 +1,50 @@
 import paramiko
 from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import NaturalIntentSerializer
-from .models import NaturalIntent
 
-LIMO_HOST = "192.168.50.165"
-LIMO_USER = "agilex"
-LIMO_PASS = "agx"
-ROS2_CMD = (
-    "source /opt/ros/humble/setup.bash 2>/dev/null && "
-    "source /home/agilex/agilex_ws/install/setup.bash 2>/dev/null && "
-    "ros2 topic pub --times 20 -r 10 --wait-matching-subscriptions 0 "
-    "/cmd_vel geometry_msgs/msg/Twist "
-    "'{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}'"
-)
+from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, ApplicationIntentSerializer, PolicyIntentSerializer
+from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
+from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
+from .services.connection import action_to_cmd_vel, send_to_limo, run as limo_run
+from .services.limo_llm import natural_to_limo_command
+import requests
+import json
+from django.conf import settings
+import yaml
+import os
 
 
-def limo_forward():
+# Create your views here.
+def test(request):
+      return HttpResponse("Test")
+
+# 파일 저장 수행하는 함수
+def safe_write_txt(filename, content):
+    try:
+        save_dir = os.path.join(settings.BASE_DIR, "intent_logs")
+        os.makedirs(save_dir, exist_ok=True)
+
+        file_path = os.path.join(save_dir, filename)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        print(f"[LOG SAVED] {file_path}")
+
+    except Exception as e:
+        print("File save skipped:", e)
+
+
+#  공통: DB 없는 환경에서도 정상 작동하도록 하는 Safe Save 함수
+def safe_save(serializer):
+    try:
+        return serializer.save()
+    except Exception as e:
+        print("DB save skipped:", e)
+        return None
+
+def safe_create(model, **kwargs):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -39,6 +67,183 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
     serializer_class = NaturalIntentSerializer
 
     def create(self, request, *args, **kwargs):
-        print(f"[RECV] intent: {request.data.get('intent', '')}")
-        result = limo_forward()
-        return Response(result, status=status.HTTP_200_OK)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        intent_obj = safe_save(serializer)
+
+        payload = serializer.data
+
+        external_url = "http://115.145.179.159:5050/infer"
+        print("\n===== [DEBUG] Sending payload to external server =====")
+        print(f"URL: {external_url}")
+        print(f"Payload: {payload}")
+        print("=======================================================\n")
+
+        try:
+            response = requests.post(external_url, json=payload, timeout=30)
+            external_response = json.loads(response.text)
+
+            intent = external_response.get("Intent", {})
+            triple = external_response.get("KGTriple", {})
+            confidence = external_response.get("confidence", 1.0)
+
+            policy = map_intent_struct_to_policy(intent, triple, confidence)
+            yaml_result = generate_yaml(policy)
+
+            safe_write_txt(
+                "policy_external.txt",
+                json.dumps(external_response, indent=4, ensure_ascii=False)
+            )
+            safe_write_txt(
+                "policy_yaml.txt",
+                yaml_result
+            )
+
+            yaml_path = os.path.join(settings.BASE_DIR, "intent_logs", "policy_yaml.txt")
+            limo_run(yaml_path)
+
+            safe_create(
+                PolicyIntent,
+                action=intent.get("Action", ""),
+                expectation_object=intent.get("ExpectationObject", ""),
+                expectation_target=intent.get("ExpectationTarget", ""),
+                head=triple.get("head", ""),
+                relation=triple.get("relation", ""),
+                tail=triple.get("tail", ""),
+            )
+
+        except Exception as e:
+            external_response = f"Failed to send: {e}"
+
+        return Response({
+            "saved": serializer.data,
+            "sent_to": external_url,
+            "external_payload": payload,
+            "external_response": external_response,
+        }, status=status.HTTP_201_CREATED)
+
+
+class NetworkIntentViewSet(viewsets.ModelViewSet):
+    queryset = NetworkIntent.objects.all()
+    serializer_class = NetworkIntentSerializer
+
+    def create(self, request, *args, **kwargs):
+
+        data = request.data.get('intent')
+        obj = {
+            "name": data['name'],
+            "mac_address": data['mac-address'],
+            "ipv4_start": data['range-ipv4-address']['start'],
+            "ipv4_end": data['range-ipv4-address']['end'],
+            "ipv6_start": data['range-ipv6-address']['start'],
+            "ipv6_end": data['range-ipv6-address']['end'],
+        }
+
+        serializer = self.get_serializer(data=obj)
+        serializer.is_valid(raise_exception=True)
+
+        intent_obj = safe_save(serializer)
+
+        payload = {"intent": serializer.data}
+        external_url = "http://115.145.179.159:5050/infer"
+
+        print("\n===== [DEBUG] Sending payload to external server =====")
+        print(f"URL: {external_url}")
+        print(f"Payload: {payload}")
+        print("=======================================================\n")
+
+        try:
+            response = requests.post(external_url, json=payload, timeout=30)
+            external_response = json.loads(response.text)
+        except Exception as e:
+            external_response = f"Failed to send: {e}"
+
+        return Response({
+            "saved": serializer.data,
+            "sent_to": external_url,
+            "external_payload": payload,
+            "external_response": external_response,
+        }, status=status.HTTP_201_CREATED)
+
+
+class ApplicationIntentViewSet(viewsets.ModelViewSet):
+    queryset = NetworkIntent.objects.all()
+    serializer_class = ApplicationIntentSerializer
+
+    def create(self, request, *args, **kwargs):
+
+        data = request.data
+        obj = {
+            "user_label": data.get("user_label", ""),
+            "expectation_id": data.get("expectation_id", ""),
+            "expectation_verb": data.get("expectation_verb", ""),
+            "object_type": data.get("object_type", ""),
+
+            "context_attribute" : data["context_attributes"][0].get("contextAttribute", ""),
+            "context_condition" : data["context_attributes"][0].get("contextCondition", ""),
+            "context_targer_id" : data["context_attributes"][0].get("contextValueRange", ""),
+
+            "target_name" : data["target_metrics"][0].get("targetName",""),
+            "target_condition" : data["target_metrics"][0].get("targetCondition",""),
+            "target_value" : data["target_metrics"][0].get("targetValueRange",""),
+
+            "priority": data.get("priority", ""),
+            "location": data.get("location", ""),
+            "observation_period": data.get("observation_period", ""),
+            "report_reference": data.get("report_reference", ""),
+        }
+
+        serializer = self.get_serializer(data=obj)
+        serializer.is_valid(raise_exception=True)
+
+        intent_obj = safe_save(serializer)
+
+        payload = {"intent": serializer.data}
+        external_url = "http://115.145.179.159:5050/infer"
+
+        print("\n===== [DEBUG] Sending payload to external server =====")
+        print(f"URL: {external_url}")
+        print(f"Payload: {payload}")
+        print("=======================================================\n")
+
+        try:
+            response = requests.post(external_url, json=payload, timeout=30)
+            external_response = json.loads(response.text)
+        except Exception as e:
+            external_response = f"Failed to send: {e}"
+
+        print("\n===== [DEBUG] External Response =====")
+        print(f"External Response: {external_response}")
+        print("=======================================================\n")
+
+        return Response({
+            "saved": serializer.data,
+            "sent_to": external_url,
+            "external_payload": payload,
+            "external_response": external_response,
+        }, status=status.HTTP_201_CREATED)
+
+
+class LimoDirectView(APIView):
+    def post(self, request):
+        text = request.data.get("text", "").strip()
+        if not text:
+            return Response({"error": "text field required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        limo_cmd = natural_to_limo_command(text)
+        cmd_vel = action_to_cmd_vel(limo_cmd["command"])
+        success = send_to_limo(cmd_vel, duration=limo_cmd["duration"])
+
+        from django.utils import timezone
+        safe_create(NaturalIntent, user="limo_direct", intent=text[:50], timestamp=timezone.now())
+
+        return Response({
+            "input": text,
+            "command": limo_cmd["command"],
+            "speed": limo_cmd["speed"],
+            "duration": limo_cmd["duration"],
+            "cmd_vel": cmd_vel,
+            "limo_success": success,
+        }, status=status.HTTP_200_OK)
