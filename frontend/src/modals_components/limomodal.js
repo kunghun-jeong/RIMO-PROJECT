@@ -15,7 +15,7 @@ function LimoModal({ closeModal, data, mode }) {
     color:      mode === "dark" ? "#fff"    : "#000",
     borderRadius: "8px",
     padding: "12px 16px",
-    marginBottom: "12px",
+    marginBottom: "10px",
     fontFamily: "Courier New",
     fontSize: "14px",
   };
@@ -29,15 +29,14 @@ function LimoModal({ closeModal, data, mode }) {
     letterSpacing: "0.5px",
   };
 
-  const command = data?.command || "unknown";
-  const cmdVel  = data?.cmd_vel || null;
-  const success = data?.limo_success;
+  const sequence = data?.sequence || [];
+  const success  = data?.limo_success;
 
   return (
     <div className="modalBackground">
       <div
         className={mode === "dark" ? "dark-modalContainer" : "light-modalContainer"}
-        style={{ maxWidth: "480px", width: "90%", padding: "20px" }}
+        style={{ maxWidth: "500px", width: "90%", padding: "20px", maxHeight: "80vh", overflowY: "auto" }}
       >
         <button className="closeModalBtn" onClick={() => closeModal(false)}>X</button>
 
@@ -49,32 +48,48 @@ function LimoModal({ closeModal, data, mode }) {
           <div style={{ fontSize: "15px" }}>"{data?.input}"</div>
         </div>
 
-        {/* 명령 */}
-        <div style={{ ...boxStyle, background: mode === "dark" ? "#1a2a3a" : "#e3f2fd" }}>
-          <div style={{ ...labelStyle, color: "#1976d2" }}>선택된 명령</div>
-          <div style={{ fontSize: "22px", fontWeight: "bold", letterSpacing: "1px" }}>
-            {COMMAND_EMOJI[command] || ""} {command}
+        {/* 시퀀스 */}
+        <div style={{ ...boxStyle, background: "transparent", padding: 0 }}>
+          <div style={{ ...labelStyle, marginBottom: "8px" }}>
+            명령 시퀀스 ({sequence.length}단계)
           </div>
-          <div style={{ marginTop: "6px", color: mode === "dark" ? "#aaa" : "#666" }}>
-            speed: {data?.speed ?? "-"}  &nbsp;|&nbsp;  duration: {data?.duration ?? "-"}s
-          </div>
+          {sequence.map((step, idx) => (
+            <div key={idx} style={{
+              ...boxStyle,
+              background: mode === "dark" ? "#1a2a3a" : "#e3f2fd",
+              marginBottom: "8px",
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+            }}>
+              <div style={{
+                width: "24px", height: "24px",
+                borderRadius: "50%",
+                background: "#1976d2",
+                color: "#fff",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "12px", fontWeight: "bold", flexShrink: 0,
+              }}>
+                {idx + 1}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: "bold", fontSize: "15px" }}>
+                  {COMMAND_EMOJI[step.command] || ""} {step.command}
+                </div>
+                <div style={{ color: mode === "dark" ? "#aaa" : "#666", fontSize: "12px", marginTop: "2px" }}>
+                  linear.x: {step.cmd_vel?.linear?.x} &nbsp;|&nbsp;
+                  angular.z: {step.cmd_vel?.angular?.z} &nbsp;|&nbsp;
+                  {step.duration}s
+                </div>
+              </div>
+              <div style={{ color: step.success ? "#4caf50" : "#ef5350", fontSize: "18px" }}>
+                {step.success ? "✓" : "✗"}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* cmd_vel */}
-        <div style={{ ...boxStyle, background: mode === "dark" ? "#1a3a1a" : "#e8f5e9" }}>
-          <div style={{ ...labelStyle, color: "#388e3c" }}>cmd_vel (ROS2 Twist)</div>
-          {cmdVel ? (
-            <>
-              <div>linear.x  : {cmdVel.linear.x}</div>
-              <div>linear.y  : {cmdVel.linear.y}</div>
-              <div>angular.z : {cmdVel.angular.z}</div>
-            </>
-          ) : (
-            <div>변환 불가</div>
-          )}
-        </div>
-
-        {/* LIMO 전송 결과 */}
+        {/* 전체 결과 */}
         <div style={{
           ...boxStyle,
           background: success
@@ -85,7 +100,7 @@ function LimoModal({ closeModal, data, mode }) {
             LIMO 전송
           </div>
           <div style={{ fontWeight: "bold", color: success ? "#4caf50" : "#ef5350" }}>
-            {success === true ? "✓ 성공" : success === false ? "✗ 실패 (LIMO 미연결)" : "-"}
+            {success ? "✓ 전체 성공" : "✗ 실패 (LIMO 미연결)"}
           </div>
         </div>
       </div>

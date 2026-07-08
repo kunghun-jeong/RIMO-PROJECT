@@ -5,6 +5,7 @@ import Devicemodal from '../modals_components/devicemodal';
 import NaturalModal from '../modals_components/naturalmodal';
 import Locationmodal from '../modals_components/locationmodal';
 import Urlmodal from '../modals_components/urlmodal';
+import YoloModal from '../modals_components/yolomodal';
 import './registration.css'
 
 
@@ -25,6 +26,7 @@ export default function Registration(props) {
 
   // variables for natural language intent modal
 const [openNaturalModal, setOpenNaturalModal] = useState(false);
+const [openYoloModal, setOpenYoloModal] = useState(false);
   
 
   return (
@@ -45,6 +47,9 @@ const [openNaturalModal, setOpenNaturalModal] = useState(false);
 
          <button className={props.mode === 'dark' ? 'dark-button' : 'light-button'}  onClick={() => { setOpenNaturalModal(true); }}> Natural-Intent </button>
          {openNaturalModal &&  <NaturalModal closeNaturalModal={setOpenNaturalModal}mode={props.mode} />}
+
+         <button className={props.mode === 'dark' ? 'dark-button' : 'light-button'} onClick={() => { setOpenYoloModal(true); }}> YOLO 자율회피 </button>
+         {openYoloModal && <YoloModal closeModal={setOpenYoloModal} mode={props.mode} />}
     </div>
   )
 }
