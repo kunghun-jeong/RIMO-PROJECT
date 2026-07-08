@@ -1,8 +1,8 @@
-from django.shortcuts import render
-from django.http import HttpResponse
+import paramiko
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+
 from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, ApplicationIntentSerializer, PolicyIntentSerializer
 from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
@@ -47,10 +47,20 @@ def safe_save(serializer):
 
 def safe_create(model, **kwargs):
     try:
-        return model.objects.create(**kwargs)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(LIMO_HOST, username=LIMO_USER, password=LIMO_PASS, timeout=10)
+        _, stdout, stderr = ssh.exec_command(f'bash -c "{ROS2_CMD}"', timeout=35)
+        exit_code = stdout.channel.recv_exit_status()
+        out = stdout.read().decode("utf-8", "replace")
+        err = stderr.read().decode("utf-8", "replace")
+        ssh.close()
+        print(f"[LIMO] exit={exit_code} out={out[:200]} err={err[:200]}")
+        return {"status": "success" if exit_code == 0 else "failed",
+                "exit": exit_code, "out": out, "err": err}
     except Exception as e:
-        print("DB create skipped:", e)
-        return None
+        print(f"[LIMO] SSH 오류: {e}")
+        return {"status": "failed", "error": str(e)}
 
 
 class NaturalIntentViewSet(viewsets.ModelViewSet):
@@ -58,6 +68,7 @@ class NaturalIntentViewSet(viewsets.ModelViewSet):
     serializer_class = NaturalIntentSerializer
 
     def create(self, request, *args, **kwargs):
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 

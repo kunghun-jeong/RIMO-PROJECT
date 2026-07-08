@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<i2nsf-security-policy xmlns="urn:ietf:params:xml:ns:yang:ietf-i2nsf-nsf-facing-interface">
+  <name>block_sns_during_office_hours</name>
+  <resolution-strategy>fmr</resolution-strategy>
+  <default-action>pass</default-action>
+  <rules>
+    <name>block_sns_rule</name>
+    <priority>1</priority>
+    <enable>true</enable>
+    <condition>
+      <ipv4>
+        <source-ipv4-range>192.0.2.0 192.0.2.255</source-ipv4-range>
+        <protocol>6</protocol>
+      </ipv4>
+      <url-category>
+        <user-defined>facebook</user-defined>
+        <user-defined>instagram</user-defined>
+        <user-defined>twitter</user-defined>
+      </url-category>
+    </condition>
+    <action>
+      <packet-action>
+        <ingress-action>drop</ingress-action>
+      </packet-action>
+    </action>
+  </rules>
+</i2nsf-security-policy>

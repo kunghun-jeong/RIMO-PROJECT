@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 .Python
 
 # Virtual environment
@@ -14,6 +15,10 @@ env/
 *.sqlite3
 *.log
 db.sqlite3
+
+# Environment variables
+.env
+.env.*
 
 # YOLO model weights
 *.pt
@@ -37,8 +42,7 @@ Thumbs.db
 .claude/settings.local.json
 
 # Generated logs
-backend/intent_logs/policy_external.txt
-backend/intent_logs/policy_yaml.txt
+backend/intent_logs/
 
 # Temp / debug
 django_out.txt
