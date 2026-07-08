@@ -76,6 +76,57 @@ def send_to_limo(cmd_vel: dict, duration: float = 2.0) -> bool:
         return False
 
 
+def send_sequence_to_limo(sequence: list) -> list:
+    import websocket
+    import json
+    import time
+
+    results = []
+    try:
+        ws = websocket.create_connection(f"ws://{LIMO_HOST}:{LIMO_PORT}", timeout=5)
+        time.sleep(0.3)
+
+        ws.send(json.dumps({
+            "op": "advertise",
+            "topic": "/cmd_vel",
+            "type": "geometry_msgs/msg/Twist"
+        }))
+        time.sleep(0.2)
+
+        def publish(msg):
+            ws.send(json.dumps({
+                "op": "publish",
+                "topic": "/cmd_vel",
+                "msg": msg
+            }))
+
+        stop = {"linear": {"x": 0.0, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y": 0.0, "z": 0.0}}
+
+        for step in sequence:
+            cmd_vel  = action_to_cmd_vel(step["command"])
+            duration = step["duration"]
+
+            end_time = time.time() + duration
+            while time.time() < end_time:
+                publish(cmd_vel)
+                time.sleep(0.1)
+
+            publish(stop)
+            time.sleep(0.2)
+
+            print(f"[LIMO] step 완료: {step['command']} / {duration}s")
+            results.append({"command": step["command"], "success": True})
+
+        ws.close()
+
+    except Exception as e:
+        print(f"[LIMO] sequence 전송 실패: {e}")
+        for step in sequence[len(results):]:
+            results.append({"command": step["command"], "success": False})
+
+    return results
+
+
 def run(yaml_path: str) -> dict:
     policy = read_policy_yaml(yaml_path)
     action = extract_action(policy)

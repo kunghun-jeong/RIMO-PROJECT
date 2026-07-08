@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Django
+*.sqlite3
+*.log
+db.sqlite3
+
+# YOLO model weights
+*.pt
+*.onnx
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+frontend/build/
+frontend/.env.local
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Claude
+.claude/settings.local.json
+
+# Generated logs
+backend/intent_logs/policy_external.txt
+backend/intent_logs/policy_yaml.txt
+
+# Temp / debug
+django_out.txt
+django_err.txt
+frontend_out.txt
+frontend_err.txt
+*.png

@@ -6,8 +6,9 @@ from rest_framework.response import Response
 from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, ApplicationIntentSerializer, PolicyIntentSerializer
 from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
-from .services.connection import action_to_cmd_vel, send_to_limo, run as limo_run
-from .services.limo_llm import natural_to_limo_command
+from .services.connection import action_to_cmd_vel, send_to_limo, send_sequence_to_limo, run as limo_run
+from .services.limo_llm import natural_to_limo_command, natural_to_limo_sequence
+from .services import yolo_avoid
 import requests
 import json
 from django.conf import settings
@@ -221,18 +222,44 @@ class LimoDirectView(APIView):
         if not text:
             return Response({"error": "text field required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        limo_cmd = natural_to_limo_command(text)
-        cmd_vel = action_to_cmd_vel(limo_cmd["command"])
-        success = send_to_limo(cmd_vel, duration=limo_cmd["duration"])
+        sequence = natural_to_limo_sequence(text)
+
+        step_results = send_sequence_to_limo(sequence)
+        all_success = all(r["success"] for r in step_results)
+
+        results = []
+        for step, result in zip(sequence, step_results):
+            results.append({
+                "command":  step["command"],
+                "speed":    step["speed"],
+                "duration": step["duration"],
+                "cmd_vel":  action_to_cmd_vel(step["command"]),
+                "success":  result["success"],
+            })
 
         from django.utils import timezone
         safe_create(NaturalIntent, user="limo_direct", intent=text[:50], timestamp=timezone.now())
 
         return Response({
-            "input": text,
-            "command": limo_cmd["command"],
-            "speed": limo_cmd["speed"],
-            "duration": limo_cmd["duration"],
-            "cmd_vel": cmd_vel,
-            "limo_success": success,
+            "input":        text,
+            "sequence":     results,
+            "limo_success": all_success,
         }, status=status.HTTP_200_OK)
+
+
+class LimoYoloView(APIView):
+    def post(self, request):
+        action = request.data.get("action", "")
+        if action == "start":
+            yolo_avoid.start()
+            return Response({"status": "started"})
+        elif action == "stop":
+            yolo_avoid.stop()
+            return Response({"status": "stopped"})
+        elif action == "tick":
+            result = yolo_avoid.tick()
+            return Response(result)
+        return Response({"error": "action must be start, stop or tick"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        return Response(yolo_avoid.get_status())
