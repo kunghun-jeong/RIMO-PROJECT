@@ -1,4 +1,4 @@
-import paramiko
+from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -7,8 +7,8 @@ from .serializers import NaturalIntentSerializer, NetworkIntentSerializer, Appli
 from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
 from .services.connection import action_to_cmd_vel, send_to_limo, send_sequence_to_limo, run as limo_run
-from .services.limo_llm import natural_to_limo_command, natural_to_limo_sequence
-from .services import yolo_avoid
+from .services.limo_llm import natural_to_limo_command, natural_to_limo_sequence, natural_to_limo_intent
+from .services import yolo_avoid, yolo_trace
 import requests
 import json
 from django.conf import settings
@@ -47,20 +47,10 @@ def safe_save(serializer):
 
 def safe_create(model, **kwargs):
     try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(LIMO_HOST, username=LIMO_USER, password=LIMO_PASS, timeout=10)
-        _, stdout, stderr = ssh.exec_command(f'bash -c "{ROS2_CMD}"', timeout=35)
-        exit_code = stdout.channel.recv_exit_status()
-        out = stdout.read().decode("utf-8", "replace")
-        err = stderr.read().decode("utf-8", "replace")
-        ssh.close()
-        print(f"[LIMO] exit={exit_code} out={out[:200]} err={err[:200]}")
-        return {"status": "success" if exit_code == 0 else "failed",
-                "exit": exit_code, "out": out, "err": err}
+        return model.objects.create(**kwargs)
     except Exception as e:
-        print(f"[LIMO] SSH 오류: {e}")
-        return {"status": "failed", "error": str(e)}
+        print("DB create skipped:", e)
+        return None
 
 
 class NaturalIntentViewSet(viewsets.ModelViewSet):
@@ -233,16 +223,41 @@ class LimoDirectView(APIView):
         if not text:
             return Response({"error": "text field required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        sequence = natural_to_limo_sequence(text)
+        intent = natural_to_limo_intent(text)
+        mode   = intent["mode"]
 
-        step_results = send_sequence_to_limo(sequence)
-        all_success = all(r["success"] for r in step_results)
+        # ── 추적 모드 ─────────────────────────────────────────────
+        if mode == "trace":
+            target = intent.get("target_class", "person")
+            yolo_trace.start(target_class=target)
+            return Response({
+                "input": text, "mode": "trace", "target": target,
+            }, status=status.HTTP_200_OK)
+
+        # ── 회피 모드 ─────────────────────────────────────────────
+        if mode == "avoid":
+            yolo_avoid.start()
+            return Response({
+                "input": text, "mode": "avoid",
+            }, status=status.HTTP_200_OK)
+
+        # ── 자율 모드 종료 ────────────────────────────────────────
+        if mode == "stop_mode":
+            yolo_trace.stop()
+            yolo_avoid.stop()
+            return Response({
+                "input": text, "mode": "stop_mode",
+            }, status=status.HTTP_200_OK)
+
+        # ── 이동 명령 ─────────────────────────────────────────────
+        steps        = intent.get("steps", [{"command": "stop", "duration": 0.0}])
+        step_results = send_sequence_to_limo(steps)
+        all_success  = all(r["success"] for r in step_results)
 
         results = []
-        for step, result in zip(sequence, step_results):
+        for step, result in zip(steps, step_results):
             results.append({
                 "command":  step["command"],
-                "speed":    step["speed"],
                 "duration": step["duration"],
                 "cmd_vel":  action_to_cmd_vel(step["command"]),
                 "success":  result["success"],
@@ -253,6 +268,7 @@ class LimoDirectView(APIView):
 
         return Response({
             "input":        text,
+            "mode":         "move",
             "sequence":     results,
             "limo_success": all_success,
         }, status=status.HTTP_200_OK)
@@ -274,3 +290,20 @@ class LimoYoloView(APIView):
 
     def get(self, request):
         return Response(yolo_avoid.get_status())
+
+
+class LimoYoloTraceView(APIView):
+    def post(self, request):
+        action       = request.data.get("action", "")
+        target_class = request.data.get("target_class", "person")
+
+        if action == "start":
+            yolo_trace.start(target_class=target_class)
+            return Response({"status": "started", "target": target_class})
+        elif action == "stop":
+            yolo_trace.stop()
+            return Response({"status": "stopped"})
+        return Response({"error": "action must be start or stop"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        return Response(yolo_trace.get_status())

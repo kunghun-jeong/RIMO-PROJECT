@@ -42,7 +42,10 @@ function NaturalIntentForm({ mode, closeNaturalModal }) {
       <h3 style={{ marginBottom: "16px" }}>자연어로 LIMO 제어</h3>
 
       <p style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginBottom: "16px" }}>
-        예시: "앞으로 가줘", "왼쪽으로 돌아", "멈춰", "go forward for 3 seconds"
+        이동: "앞으로 가줘", "천천히 왼쪽으로 돌아", "멈춰"<br/>
+        추적: "앞 사람을 따라가", "저 의자 쫒아"<br/>
+        회피: "장애물 피해", "자율 주행 시작"<br/>
+        종료: "추적 멈춰", "모드 종료"
       </p>
 
       <form onSubmit={handleSubmit}>
