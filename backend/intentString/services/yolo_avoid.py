@@ -1,9 +1,18 @@
-import numpy as np
 import json
 import time
 import threading
 import requests
+import websocket
 from .connection import ACTION_MAP, LIMO_HOST, LIMO_PORT
+
+try:
+    import cv2
+    import numpy as np
+    from ultralytics import YOLO
+    _YOLO_AVAILABLE = True
+except ImportError:
+    _YOLO_AVAILABLE = False
+    print("[YOLO] cv2/ultralytics not installed - YOLO disabled")
 
 SNAPSHOT_URL = f"http://{LIMO_HOST}:8080/snapshot"
 
