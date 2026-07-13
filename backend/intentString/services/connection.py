@@ -127,6 +127,43 @@ def send_sequence_to_limo(sequence: list) -> list:
     return results
 
 
+def send_astar_path_to_limo(path: list) -> bool:
+    """
+    A* 경로를 rosbridge를 통해 LIMO의 /astar_waypoints 토픽으로 전송.
+    path: [{"x": float, "y": float}, ...]
+    Pure Pursuit Follower가 이 경로를 받아서 추종함.
+    """
+    import websocket
+    import json
+    import time
+
+    try:
+        ws = websocket.create_connection(f"ws://{LIMO_HOST}:{LIMO_PORT}", timeout=5)
+        time.sleep(0.3)
+
+        ws.send(json.dumps({
+            "op":    "advertise",
+            "topic": "/astar_waypoints",
+            "type":  "std_msgs/msg/String"
+        }))
+        time.sleep(0.2)
+
+        ws.send(json.dumps({
+            "op":    "publish",
+            "topic": "/astar_waypoints",
+            "msg":   {"data": json.dumps(path)}
+        }))
+        time.sleep(0.1)
+
+        ws.close()
+        print(f"[LIMO] A* 경로 전송 완료: {len(path)}개 포인트")
+        return True
+
+    except Exception as e:
+        print(f"[LIMO] A* 경로 전송 실패: {e}")
+        return False
+
+
 def run(yaml_path: str) -> dict:
     policy = read_policy_yaml(yaml_path)
     action = extract_action(policy)

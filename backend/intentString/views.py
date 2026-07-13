@@ -9,6 +9,8 @@ from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
 from .services.connection import action_to_cmd_vel, send_to_limo, send_sequence_to_limo, run as limo_run
 from .services.limo_llm import natural_to_limo_command, natural_to_limo_sequence
 from .services import yolo_avoid
+from .services.path_planner import plan_path, get_map_info, reload_map
+from .services.connection import send_astar_path_to_limo
 import requests
 import json
 from django.conf import settings
@@ -274,3 +276,63 @@ class LimoYoloView(APIView):
 
     def get(self, request):
         return Response(yolo_avoid.get_status())
+
+
+class MapView(APIView):
+    """GET /api/map/ — 맵 이미지 + 메타데이터 반환"""
+    def get(self, request):
+        return Response(get_map_info())
+
+    def post(self, request):
+        """맵 파일 교체 후 재로드"""
+        reload_map()
+        return Response({"status": "reloaded"})
+
+
+class PathPlanView(APIView):
+    """POST /api/pathplan/ — A* 경로 계획"""
+    def post(self, request):
+        data = request.data
+
+        goal_x = data.get("goal_x")
+        goal_y = data.get("goal_y")
+        start_x = data.get("start_x", 9.0)
+        start_y = data.get("start_y", 0.0)
+
+        if goal_x is None or goal_y is None:
+            return Response(
+                {"error": "goal_x, goal_y 필수"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = plan_path(
+            float(start_x), float(start_y),
+            float(goal_x),  float(goal_y),
+        )
+
+        if not result["found"]:
+            return Response(
+                {"error": "경로를 찾을 수 없습니다", "found": False},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class PathExecuteView(APIView):
+    """POST /api/pathexec/ — A* 경로를 LIMO Pure Pursuit으로 전송"""
+    def post(self, request):
+        path = request.data.get("path", [])
+
+        if not path or len(path) < 2:
+            return Response(
+                {"error": "path는 최소 2개 포인트 필요"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        success = send_astar_path_to_limo(path)
+
+        return Response({
+            "success":    success,
+            "points_sent": len(path),
+        }, status=status.HTTP_200_OK)
