@@ -8,7 +8,7 @@ from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyInten
 from .services.intentToPolicy import map_intent_struct_to_policy, generate_yaml
 from .services.connection import action_to_cmd_vel, send_to_limo, send_sequence_to_limo, run as limo_run
 from .services.limo_llm import natural_to_limo_command, natural_to_limo_sequence, natural_to_limo_intent
-from .services import yolo_avoid, yolo_trace
+from .services import yolo_avoid, yolo_trace, yolo_greet
 import requests
 import json
 from django.conf import settings
@@ -245,8 +245,16 @@ class LimoDirectView(APIView):
         if mode == "stop_mode":
             yolo_trace.stop()
             yolo_avoid.stop()
+            yolo_greet.stop()
             return Response({
                 "input": text, "mode": "stop_mode",
+            }, status=status.HTTP_200_OK)
+
+        # ── 인사 모드 ─────────────────────────────────────────────
+        if mode == "greet":
+            yolo_greet.start()
+            return Response({
+                "input": text, "mode": "greet",
             }, status=status.HTTP_200_OK)
 
         # ── 이동 명령 ─────────────────────────────────────────────
@@ -307,3 +315,18 @@ class LimoYoloTraceView(APIView):
 
     def get(self, request):
         return Response(yolo_trace.get_status())
+
+
+class LimoYoloGreetView(APIView):
+    def post(self, request):
+        action = request.data.get("action", "")
+        if action == "start":
+            yolo_greet.start()
+            return Response({"status": "started"})
+        elif action == "stop":
+            yolo_greet.stop()
+            return Response({"status": "stopped"})
+        return Response({"error": "action must be start or stop"}, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        return Response(yolo_greet.get_status())

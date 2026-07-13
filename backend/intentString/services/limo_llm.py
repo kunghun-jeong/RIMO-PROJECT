@@ -257,7 +257,8 @@ Modes:
 - "move"      : movement command (go, turn, rotate, curve, stop movement, etc.)
 - "trace"     : follow or chase a specific object or person
 - "avoid"     : autonomous obstacle avoidance mode
-- "stop_mode" : stop current autonomous mode (trace or avoid)
+- "greet"     : find a person and greet them (search → approach → greeting motion)
+- "stop_mode" : stop current autonomous mode (trace, avoid, or greet)
 
 For "move" mode, parse steps using these commands:
 "go straight", "go straight slow", "go straight fast",
@@ -273,6 +274,7 @@ Output format per mode:
 move      -> {{"mode": "move", "steps": [{{"command": "...", "duration": 0.0}}]}}
 trace     -> {{"mode": "trace", "target_class": "person"}}
 avoid     -> {{"mode": "avoid"}}
+greet     -> {{"mode": "greet"}}
 stop_mode -> {{"mode": "stop_mode"}}
 
 Examples:
@@ -296,6 +298,15 @@ Output: {{"mode": "avoid"}}
 
 Input: "자율 주행 시작"
 Output: {{"mode": "avoid"}}
+
+Input: "사람 찾아서 인사해"
+Output: {{"mode": "greet"}}
+
+Input: "사람한테 가서 인사해"
+Output: {{"mode": "greet"}}
+
+Input: "사람 찾아"
+Output: {{"mode": "greet"}}
 
 Input: "추적 멈춰"
 Output: {{"mode": "stop_mode"}}
@@ -324,7 +335,7 @@ Output:"""
         parsed = {}
 
     mode = parsed.get("mode", "move")
-    if mode not in ("move", "trace", "avoid", "stop_mode"):
+    if mode not in ("move", "trace", "avoid", "greet", "stop_mode"):
         mode = "move"
 
     if mode == "trace":
@@ -335,6 +346,9 @@ Output:"""
 
     if mode == "avoid":
         return {"mode": "avoid"}
+
+    if mode == "greet":
+        return {"mode": "greet"}
 
     if mode == "stop_mode":
         return {"mode": "stop_mode"}

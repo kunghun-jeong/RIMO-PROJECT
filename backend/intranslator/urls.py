@@ -19,7 +19,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 from intentString import views as intent_views
-from intentString.views import LimoDirectView, LimoYoloView, LimoYoloTraceView
+from intentString.views import LimoDirectView, LimoYoloView, LimoYoloTraceView, LimoYoloGreetView
 
 router = DefaultRouter()
 router.register(r'NaturalIntent', intent_views.NaturalIntentViewSet, 'NaturalIntent')
@@ -29,5 +29,6 @@ urlpatterns = [
     path('api/limo/', LimoDirectView.as_view(), name='limo-direct'),
     path('api/limo/yolo/', LimoYoloView.as_view(), name='limo-yolo'),
     path('api/limo/trace/', LimoYoloTraceView.as_view(), name='limo-trace'),
+    path('api/limo/greet/', LimoYoloGreetView.as_view(), name='limo-greet'),
     path('api/', include(router.urls)),
 ]

@@ -22,6 +22,7 @@ const MODE_LABEL = {
   move:      { icon: "🤖", text: "이동 명령" },
   trace:     { icon: "🎯", text: "추적 모드" },
   avoid:     { icon: "🛡️", text: "회피 모드" },
+  greet:     { icon: "👋", text: "인사 모드" },
   stop_mode: { icon: "⏹", text: "모드 종료" },
 };
 
@@ -153,6 +154,20 @@ function LimoModal({ closeModal, data, mode }) {
             </div>
             <div style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginTop: "8px" }}>
               장애물을 감지하며 자동으로 회피합니다. 정지하려면 "모드 종료"를 입력하세요.
+            </div>
+          </div>
+        )}
+
+        {/* ── greet: 인사 모드 ── */}
+        {responseMode === "greet" && (
+          <div style={{ ...box, background: mode === "dark" ? "#1a2a3a" : "#e8eaf6" }}>
+            <div style={{ ...label, color: "#3949ab" }}>인사 모드</div>
+            <div style={{ fontWeight: "bold", fontSize: "15px", color: "#3f51b5", marginBottom: "8px" }}>
+              👋 사람을 탐색합니다
+            </div>
+            <div style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666" }}>
+              SEARCHING → ALIGNING → APPROACHING → GREETING 순서로 진행됩니다.<br/>
+              정지하려면 "모드 종료"를 입력하세요.
             </div>
           </div>
         )}
