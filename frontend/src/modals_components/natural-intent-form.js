@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import "./group-forms.css";
 import LimoModal from "./limomodal";
 
-function NaturalIntentForm({ mode, closeNaturalModal }) {
+function NaturalIntentForm({ mode }) {
   const [inputText, setInputText] = useState("");
   const [limoData, setLimoData] = useState(null);
   const [showLimoModal, setShowLimoModal] = useState(false);
@@ -12,7 +12,7 @@ function NaturalIntentForm({ mode, closeNaturalModal }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputText.trim()) {
-      setError("명령을 입력하세요.");
+      setError("Please enter a command.");
       return;
     }
 
@@ -31,7 +31,7 @@ function NaturalIntentForm({ mode, closeNaturalModal }) {
       setShowLimoModal(true);
     } catch (err) {
       console.error(err);
-      setError("서버 연결에 실패했습니다.");
+      setError("Failed to connect to the server.");
     } finally {
       setLoading(false);
     }
@@ -39,20 +39,20 @@ function NaturalIntentForm({ mode, closeNaturalModal }) {
 
   return (
     <div style={{ margin: "20px", minWidth: "400px" }}>
-      <h3 style={{ marginBottom: "16px" }}>자연어로 LIMO 제어</h3>
+      <h3 style={{ marginBottom: "16px" }}>Control LIMO with Natural Language</h3>
 
       <p style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginBottom: "16px" }}>
-        이동: "앞으로 가줘", "천천히 왼쪽으로 돌아", "멈춰"<br/>
-        추적: "앞 사람을 따라가", "저 의자 쫒아"<br/>
-        회피: "장애물 피해", "자율 주행 시작"<br/>
-        종료: "추적 멈춰", "모드 종료"
+        Move: "go forward", "turn left slowly", "stop"<br/>
+        Trace: "follow the person ahead", "chase that chair"<br/>
+        Avoid: "avoid obstacles", "start autonomous driving"<br/>
+        Stop: "stop tracking", "end mode"
       </p>
 
       <form onSubmit={handleSubmit}>
         <textarea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="자연어 명령을 입력하세요..."
+          placeholder="Enter a natural language command..."
           rows={4}
           style={{
             width: "100%",
@@ -77,7 +77,7 @@ function NaturalIntentForm({ mode, closeNaturalModal }) {
             disabled={loading}
             className={mode === "dark" ? "dark-button" : "light-button"}
           >
-            {loading ? "처리 중..." : "전송"}
+            {loading ? "Processing..." : "Send"}
           </button>
         </footer>
       </form>

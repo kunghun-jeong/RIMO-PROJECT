@@ -19,11 +19,11 @@ const COMMAND_EMOJI = {
 };
 
 const MODE_LABEL = {
-  move:      { icon: "🤖", text: "이동 명령" },
-  trace:     { icon: "🎯", text: "추적 모드" },
-  avoid:     { icon: "🛡️", text: "회피 모드" },
-  greet:     { icon: "👋", text: "인사 모드" },
-  stop_mode: { icon: "⏹", text: "모드 종료" },
+  move:      { icon: "🤖", text: "Move Command" },
+  trace:     { icon: "🎯", text: "Trace Mode" },
+  avoid:     { icon: "🛡️", text: "Avoid Mode" },
+  greet:     { icon: "👋", text: "Greet Mode" },
+  stop_mode: { icon: "⏹", text: "Mode Stopped" },
 };
 
 function LimoModal({ closeModal, data, mode }) {
@@ -57,23 +57,23 @@ function LimoModal({ closeModal, data, mode }) {
       >
         <button className="closeModalBtn" onClick={() => closeModal(false)}>X</button>
 
-        <h2 style={{ textAlign: "center", marginBottom: "20px" }}>LIMO 변환 결과</h2>
+        <h2 style={{ textAlign: "center", marginBottom: "20px" }}>LIMO Command Result</h2>
 
-        {/* 입력 */}
+        {/* input */}
         <div style={box}>
-          <div style={label}>입력</div>
+          <div style={label}>Input</div>
           <div style={{ fontSize: "15px" }}>"{data?.input}"</div>
         </div>
 
-        {/* 모드 표시 */}
+        {/* recognized mode */}
         <div style={{ ...box, background: mode === "dark" ? "#1a2a3a" : "#e3f2fd" }}>
-          <div style={label}>인식된 모드</div>
+          <div style={label}>Recognized Mode</div>
           <div style={{ fontSize: "16px", fontWeight: "bold" }}>
             {modeInfo.icon} {modeInfo.text}
           </div>
         </div>
 
-        {/* ── move: 명령 시퀀스 ── */}
+        {/* ── move: command sequence ── */}
         {responseMode === "move" && (() => {
           const sequence = data?.sequence || [];
           const success  = data?.limo_success;
@@ -81,7 +81,7 @@ function LimoModal({ closeModal, data, mode }) {
             <>
               <div style={{ ...box, background: "transparent", padding: 0 }}>
                 <div style={{ ...label, marginBottom: "8px" }}>
-                  명령 시퀀스 ({sequence.length}단계)
+                  Command Sequence ({sequence.length} steps)
                 </div>
                 {sequence.map((step, idx) => (
                   <div key={idx} style={{
@@ -123,61 +123,61 @@ function LimoModal({ closeModal, data, mode }) {
                   ? (mode === "dark" ? "#1a3a1a" : "#e8f5e9")
                   : (mode === "dark" ? "#3a1a1a" : "#ffebee"),
               }}>
-                <div style={{ ...label, color: success ? "#388e3c" : "#c62828" }}>LIMO 전송</div>
+                <div style={{ ...label, color: success ? "#388e3c" : "#c62828" }}>LIMO Transmission</div>
                 <div style={{ fontWeight: "bold", color: success ? "#4caf50" : "#ef5350" }}>
-                  {success ? "✓ 전체 성공" : "✗ 실패 (LIMO 미연결)"}
+                  {success ? "✓ All steps succeeded" : "✗ Failed (LIMO not connected)"}
                 </div>
               </div>
             </>
           );
         })()}
 
-        {/* ── trace: 추적 시작 ── */}
+        {/* ── trace: tracking started ── */}
         {responseMode === "trace" && (
           <div style={{ ...box, background: mode === "dark" ? "#1a3a1a" : "#e8f5e9" }}>
-            <div style={{ ...label, color: "#388e3c" }}>추적 대상</div>
+            <div style={{ ...label, color: "#388e3c" }}>Trace Target</div>
             <div style={{ fontWeight: "bold", fontSize: "16px", color: "#4caf50" }}>
               🎯 {data?.target}
             </div>
             <div style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginTop: "8px" }}>
-              YOLO 추적 모드가 시작됩니다. 정지하려면 "추적 멈춰"를 입력하세요.
+              YOLO trace mode is starting. Enter "stop tracking" to stop.
             </div>
           </div>
         )}
 
-        {/* ── avoid: 회피 시작 ── */}
+        {/* ── avoid: avoidance started ── */}
         {responseMode === "avoid" && (
           <div style={{ ...box, background: mode === "dark" ? "#1a3a1a" : "#e8f5e9" }}>
-            <div style={{ ...label, color: "#388e3c" }}>상태</div>
+            <div style={{ ...label, color: "#388e3c" }}>Status</div>
             <div style={{ fontWeight: "bold", fontSize: "16px", color: "#4caf50" }}>
-              🛡️ 자율 회피 모드 시작
+              🛡️ Autonomous avoidance mode started
             </div>
             <div style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666", marginTop: "8px" }}>
-              장애물을 감지하며 자동으로 회피합니다. 정지하려면 "모드 종료"를 입력하세요.
+              Detecting and avoiding obstacles automatically. Enter "end mode" to stop.
             </div>
           </div>
         )}
 
-        {/* ── greet: 인사 모드 ── */}
+        {/* ── greet: greet mode ── */}
         {responseMode === "greet" && (
           <div style={{ ...box, background: mode === "dark" ? "#1a2a3a" : "#e8eaf6" }}>
-            <div style={{ ...label, color: "#3949ab" }}>인사 모드</div>
+            <div style={{ ...label, color: "#3949ab" }}>Greet Mode</div>
             <div style={{ fontWeight: "bold", fontSize: "15px", color: "#3f51b5", marginBottom: "8px" }}>
-              👋 사람을 탐색합니다
+              👋 Searching for a person
             </div>
             <div style={{ fontSize: "13px", color: mode === "dark" ? "#aaa" : "#666" }}>
-              SEARCHING → ALIGNING → APPROACHING → GREETING 순서로 진행됩니다.<br/>
-              정지하려면 "모드 종료"를 입력하세요.
+              Proceeds through SEARCHING → ALIGNING → APPROACHING → GREETING.<br/>
+              Enter "end mode" to stop.
             </div>
           </div>
         )}
 
-        {/* ── stop_mode: 모드 종료 ── */}
+        {/* ── stop_mode: mode stopped ── */}
         {responseMode === "stop_mode" && (
           <div style={{ ...box, background: mode === "dark" ? "#3a1a1a" : "#fff3e0" }}>
-            <div style={{ ...label, color: "#e65100" }}>상태</div>
+            <div style={{ ...label, color: "#e65100" }}>Status</div>
             <div style={{ fontWeight: "bold", fontSize: "16px", color: "#ff9800" }}>
-              ⏹ 모든 자율 모드 종료
+              ⏹ All autonomous modes stopped
             </div>
           </div>
         )}
