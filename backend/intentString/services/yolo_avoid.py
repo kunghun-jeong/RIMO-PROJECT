@@ -34,6 +34,7 @@ STOP_CMD = {"linear": {"x": 0.0, "y": 0.0, "z": 0.0}, "angular": {"x": 0.0, "y":
 def _get_model():
     global _model
     if _model is None:
+        from ultralytics import YOLO
         _model = YOLO("yolo11n.pt")
         print("[YOLO] 모델 로드 완료")
     return _model
@@ -41,6 +42,7 @@ def _get_model():
 
 def _read_frame():
     try:
+        import cv2
         r = requests.get(SNAPSHOT_URL, timeout=3)
         if r.status_code != 200:
             return False, None
@@ -56,6 +58,7 @@ def _ensure_ws():
     if _ws is not None:
         return True
     try:
+        import websocket
         _ws = websocket.create_connection(f"ws://{LIMO_HOST}:{LIMO_PORT}", timeout=5)
         time.sleep(0.3)
         _ws.send(json.dumps({

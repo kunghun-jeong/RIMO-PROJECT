@@ -6,6 +6,7 @@ import NaturalModal from '../modals_components/naturalmodal';
 import Locationmodal from '../modals_components/locationmodal';
 import Urlmodal from '../modals_components/urlmodal';
 import YoloModal from '../modals_components/yolomodal';
+import MapModal from '../modals_components/mapmodal';
 import './registration.css'
 
 
@@ -27,6 +28,7 @@ export default function Registration(props) {
   // variables for natural language intent modal
 const [openNaturalModal, setOpenNaturalModal] = useState(false);
 const [openYoloModal, setOpenYoloModal] = useState(false);
+const [openMapModal,  setOpenMapModal]  = useState(false);
   
 
   return (
@@ -50,6 +52,9 @@ const [openYoloModal, setOpenYoloModal] = useState(false);
 
          <button className={props.mode === 'dark' ? 'dark-button' : 'light-button'} onClick={() => { setOpenYoloModal(true); }}> YOLO 자율회피 </button>
          {openYoloModal && <YoloModal closeModal={setOpenYoloModal} mode={props.mode} />}
+
+         <button className={props.mode === 'dark' ? 'dark-button' : 'light-button'} onClick={() => { setOpenMapModal(true); }}> Path Planner </button>
+         {openMapModal && <MapModal onClose={() => setOpenMapModal(false)} mode={props.mode} />}
     </div>
   )
 }
