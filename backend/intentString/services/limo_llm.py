@@ -1,372 +1,168 @@
-import requests
+"""
+Ollama (Llama3.1) → structured intent for LIMO.
+
+Returns one of:
+  action:    {mode:"action",    command:str,  speed:float, duration:float, target_class:None}
+  detection: {mode:"detection", command:None, speed:None,  duration:None,  target_class:None}
+  trace:     {mode:"trace",     command:None, speed:None,  duration:None,  target_class:str}
+"""
 import json
 import re
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3.1:8b"
+import requests
 
-LIMO_COMMANDS = [
-    "go straight", "go straight slow", "go straight fast",
-    "move back", "move back slow",
-    "stop",
-    "rotate left", "rotate right",
-    "turn left", "turn right",
-    "sharp left", "sharp right",
-    "curve left", "curve right",
-]
+from .config import OLLAMA_URL, OLLAMA_MODEL
 
+_PROMPT = """\
+You control a LIMO robot. Parse the user command and return ONLY a JSON object.
 
-def natural_to_limo_command(text: str) -> dict:
-    prompt = f"""You are a controller for AgileX LIMO robot.
-The user gives a natural language command. Select the best matching command and return JSON.
+JSON fields:
+- "mode": "action" | "detection" | "trace"
+- "command": action name (action mode only, else null)
+- "speed": float m/s (action mode only, else null)
+- "duration": float seconds (action mode only, else null)
+- "target_class": YOLO class string for trace mode (else null)
 
-Available commands:
-- "go straight"      : move forward at normal speed
-- "go straight slow" : move forward slowly
-- "go straight fast" : move forward fast
-- "move back"        : move backward at normal speed
-- "move back slow"   : move backward slowly
-- "stop"             : stop all movement
-- "rotate left"      : spin in place to the left
-- "rotate right"     : spin in place to the right
-- "turn left"        : arc turn left while moving forward
-- "turn right"       : arc turn right while moving forward
-- "sharp left"       : tight left turn while moving forward
-- "sharp right"      : tight right turn while moving forward
-- "curve left"       : gentle left curve at higher speed
-- "curve right"      : gentle right curve at higher speed
+Action commands (use these exact strings):
+  go straight | go straight slow | go straight fast
+  move forward | go forward
+  move back | move back slow | move backward | go back | stop
+  rotate left | rotate right
+  turn left | turn right | sharp left | sharp right
+  curve left | curve right
 
-Rules:
-- command must be exactly one of the 14 options above
-- duration: seconds to run (default 2.0)
+Mode rules:
+  "action"    → a single direct movement (go, move, turn, rotate, stop)
+  "detection" → detect or greet people (keywords: detect, greet, find people, say hello, wave)
+  "trace"     → follow or track a moving target (keywords: follow, track, chase, pursue, trace, keep up with)
 
 Examples:
-Input: "앞으로 가줘"
-Output: {{"command": "go straight", "duration": 2.0}}
+User: go forward
+JSON: {"mode":"action","command":"go straight","speed":0.5,"duration":2.0,"target_class":null}
 
-Input: "천천히 앞으로"
-Output: {{"command": "go straight slow", "duration": 2.0}}
+User: go forward for 3 seconds
+JSON: {"mode":"action","command":"go straight","speed":0.5,"duration":3.0,"target_class":null}
 
-Input: "빠르게 전진"
-Output: {{"command": "go straight fast", "duration": 2.0}}
+User: move forward
+JSON: {"mode":"action","command":"move forward","speed":0.5,"duration":2.0,"target_class":null}
 
-Input: "제자리에서 왼쪽으로 돌아"
-Output: {{"command": "rotate left", "duration": 2.0}}
+User: move backward slowly
+JSON: {"mode":"action","command":"move back slow","speed":0.2,"duration":2.0,"target_class":null}
 
-Input: "왼쪽으로 크게 돌아"
-Output: {{"command": "sharp left", "duration": 2.0}}
+User: go back
+JSON: {"mode":"action","command":"move back","speed":0.5,"duration":2.0,"target_class":null}
 
-Input: "완만하게 오른쪽으로 곡선"
-Output: {{"command": "curve right", "duration": 3.0}}
+User: turn right slowly
+JSON: {"mode":"action","command":"turn right","speed":0.2,"duration":2.0,"target_class":null}
 
-Input: "멈춰"
-Output: {{"command": "stop", "duration": 0.0}}
+User: follow the person
+JSON: {"mode":"trace","command":null,"speed":null,"duration":null,"target_class":"person"}
 
-Now convert:
-Input: "{text}"
-Output:"""
+User: track the car in front
+JSON: {"mode":"trace","command":null,"speed":null,"duration":null,"target_class":"car"}
 
+User: chase the ball
+JSON: {"mode":"trace","command":null,"speed":null,"duration":null,"target_class":"sports ball"}
+
+User: greet people around you
+JSON: {"mode":"detection","command":null,"speed":null,"duration":null,"target_class":null}
+
+User: find and wave at someone
+JSON: {"mode":"detection","command":null,"speed":null,"duration":null,"target_class":null}
+
+Return ONLY valid JSON, no explanation.\
+"""
+
+
+def infer(text: str) -> dict:
+    prompt = f"{_PROMPT}\n\nUser: {text}\nJSON:"
     try:
-        res = requests.post(OLLAMA_URL, json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }, timeout=30)
-
-        raw = res.json().get("response", "{}")
-        parsed = json.loads(raw)
-        print(f"[Llama] natural input='{text}' → raw: {raw}")
-
+        resp = requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},
+            timeout=30,
+        )
+        raw = resp.json().get("response", "")
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if m:
+            return _normalize(json.loads(m.group()))
     except Exception as e:
-        print(f"[Llama] 실패: {e}")
-        parsed = {}
-
-    command = parsed.get("command", "stop")
-    if command not in LIMO_COMMANDS:
-        command = "stop"
-
-    duration_raw = parsed.get("duration")
-    speed_raw = parsed.get("speed")
-
-    return {
-        "command":  command,
-        "speed":    float(speed_raw) if speed_raw is not None else 0.5,
-        "duration": float(duration_raw) if duration_raw is not None else 2.0,
-    }
+        print(f"[LLM] Error: {e}")
+    return _fallback(text)
 
 
-def natural_to_limo_sequence(text: str) -> list:
-    prompt = f"""You are a controller for AgileX LIMO robot.
-The user gives a natural language command that may contain multiple sequential actions.
-Parse it into an ordered list of steps and return JSON.
+def _normalize(d: dict) -> dict:
+    mode = d.get("mode", "action")
+    if mode not in ("action", "detection", "trace"):
+        mode = "action"
 
-Available commands:
-- "go straight"      : move forward at normal speed
-- "go straight slow" : move forward slowly
-- "go straight fast" : move forward fast
-- "move back"        : move backward at normal speed
-- "move back slow"   : move backward slowly
-- "stop"             : stop all movement
-- "rotate left"      : spin in place to the left
-- "rotate right"     : spin in place to the right
-- "turn left"        : arc turn left while moving forward
-- "turn right"       : arc turn right while moving forward
-- "sharp left"       : tight left turn while moving forward
-- "sharp right"      : tight right turn while moving forward
-- "curve left"       : gentle left curve at higher speed
-- "curve right"      : gentle right curve at higher speed
-
-Rules:
-- Each command must be exactly one of the 14 options above
-- duration in seconds. "one block"=3.0s, "two blocks"=6.0s, "three blocks"=9.0s
-- Return a JSON object with a "steps" key containing the array
-
-Examples:
-Input: "go forward two blocks and turn left"
-Output: {{"steps": [{{"command": "go straight", "duration": 6.0}}, {{"command": "turn left", "duration": 2.0}}]}}
-
-Input: "천천히 앞으로 가다가 오른쪽으로 크게 돌아"
-Output: {{"steps": [{{"command": "go straight slow", "duration": 3.0}}, {{"command": "sharp right", "duration": 2.0}}]}}
-
-Input: "제자리에서 왼쪽으로 돌고 빠르게 전진"
-Output: {{"steps": [{{"command": "rotate left", "duration": 2.0}}, {{"command": "go straight fast", "duration": 3.0}}]}}
-
-Input: "완만하게 왼쪽 곡선으로 이동 후 정지"
-Output: {{"steps": [{{"command": "curve left", "duration": 4.0}}, {{"command": "stop", "duration": 0.0}}]}}
-
-Input: "멈춰"
-Output: {{"steps": [{{"command": "stop", "duration": 0.0}}]}}
-
-Now convert:
-Input: "{text}"
-Output:"""
-
-    try:
-        res = requests.post(OLLAMA_URL, json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-        }, timeout=60)
-
-        raw = res.json().get("response", "{}")
-        parsed_obj = json.loads(raw)
-        print(f"[Llama] sequence input='{text}' → raw obj: {parsed_obj}")
-
-        # "steps", "commands", "sequence" 등 어떤 키로 오든 배열을 찾음
-        parsed = None
-        for val in parsed_obj.values():
-            if isinstance(val, list):
-                parsed = val
-                break
-        if parsed is None:
-            parsed = []
-
-    except Exception as e:
-        print(f"[Llama] sequence 실패: {e}")
-        parsed = []
-
-    result = []
-    for item in parsed:
-        command = item.get("command", "stop")
-        if command not in LIMO_COMMANDS:
-            command = "stop"
-        speed_raw    = item.get("speed")
-        duration_raw = item.get("duration")
-        result.append({
-            "command":  command,
-            "speed":    float(speed_raw)    if speed_raw    is not None else 0.5,
-            "duration": float(duration_raw) if duration_raw is not None else 2.0,
-        })
-
-    return result if result else [{"command": "stop", "speed": 0.0, "duration": 0.0}]
-
-
-def aot_to_limo_command(intent: dict) -> dict:
-    prompt = f"""You are a controller for AgileX LIMO robot.
-Convert the intent into a LIMO movement command.
-
-Available commands:
-- "go straight" : move forward
-- "turn left"   : rotate left
-- "turn right"  : rotate right
-- "move back"   : move backward
-- "stop"        : stop all movement
-
-Example A:
-Intent: Action=Move, Object=desk, Target=chair
-Output: {{"command": "go straight", "speed": 0.4, "duration": 3}}
-
-Example B:
-Intent: Action=Turn, Object=Robot, Target=left
-Output: {{"command": "turn left", "speed": 0.3, "duration": 2}}
-
-Example C:
-Intent: Action=Stop, Object=Robot, Target=Stop
-Output: {{"command": "stop", "speed": 0.0, "duration": 0}}
-
-Example D:
-Intent: Action=Go, Object=door, Target=forward
-Output: {{"command": "go straight", "speed": 0.5, "duration": 5}}
-
-Now convert:
-Intent: Action={intent.get("Action", "")}, Object={intent.get("ExpectationObject", "")}, Target={intent.get("ExpectationTarget", "")}
-Output:"""
-
-    try:
-        res = requests.post(OLLAMA_URL, json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }, timeout=30)
-
-        raw = res.json().get("response", "{}")
-        parsed = json.loads(raw)
-        print(f"[Llama] raw: {raw}")
-
-    except Exception as e:
-        print(f"[Llama] 실패: {e}")
-        parsed = {}
-
-    duration_raw = parsed.get("duration")
-    speed_raw = parsed.get("speed")
-
-    return {
-        "command":  parsed.get("command", "stop"),
-        "speed":    float(speed_raw) if speed_raw is not None else 0.3,
-        "duration": float(duration_raw) if duration_raw is not None else 2.0
-    }
-
-
-def natural_to_limo_intent(text: str) -> dict:
-    """
-    자연어를 분석해 mode와 필요한 데이터를 반환.
-
-    반환 형태:
-      {"mode": "move",       "steps": [...]}
-      {"mode": "trace",      "target_class": "person"}
-      {"mode": "avoid"}
-      {"mode": "stop_mode"}
-    """
-    prompt = f"""You are a controller for AgileX LIMO robot.
-Classify the user command into one of 4 modes and return JSON.
-
-Modes:
-- "move"      : movement command (go, turn, rotate, curve, stop movement, etc.)
-- "trace"     : follow or chase a specific object or person
-- "avoid"     : autonomous obstacle avoidance mode
-- "greet"     : find a person and greet them (search → approach → greeting motion)
-- "stop_mode" : stop current autonomous mode (trace, avoid, or greet)
-
-For "move" mode, parse steps using these commands:
-"go straight", "go straight slow", "go straight fast",
-"move back", "move back slow", "stop",
-"rotate left", "rotate right",
-"turn left", "turn right", "sharp left", "sharp right",
-"curve left", "curve right"
-duration unit is seconds. "one block"=3.0s, "two blocks"=6.0s
-
-For "trace" mode, set target_class to the YOLO object name (e.g. "person", "bottle", "chair", "dog").
-
-Output format per mode:
-move      -> {{"mode": "move", "steps": [{{"command": "...", "duration": 0.0}}]}}
-trace     -> {{"mode": "trace", "target_class": "person"}}
-avoid     -> {{"mode": "avoid"}}
-greet     -> {{"mode": "greet"}}
-stop_mode -> {{"mode": "stop_mode"}}
-
-Examples:
-Input: "앞으로 가줘"
-Output: {{"mode": "move", "steps": [{{"command": "go straight", "duration": 2.0}}]}}
-
-Input: "천천히 앞으로 가다가 왼쪽으로 돌아"
-Output: {{"mode": "move", "steps": [{{"command": "go straight slow", "duration": 3.0}}, {{"command": "turn left", "duration": 2.0}}]}}
-
-Input: "앞 사람 쫒아"
-Output: {{"mode": "trace", "target_class": "person"}}
-
-Input: "저 병 따라가"
-Output: {{"mode": "trace", "target_class": "bottle"}}
-
-Input: "의자 추적해"
-Output: {{"mode": "trace", "target_class": "chair"}}
-
-Input: "장애물 피해"
-Output: {{"mode": "avoid"}}
-
-Input: "자율 주행 시작"
-Output: {{"mode": "avoid"}}
-
-Input: "사람 찾아서 인사해"
-Output: {{"mode": "greet"}}
-
-Input: "사람한테 가서 인사해"
-Output: {{"mode": "greet"}}
-
-Input: "사람 찾아"
-Output: {{"mode": "greet"}}
-
-Input: "추적 멈춰"
-Output: {{"mode": "stop_mode"}}
-
-Input: "모드 종료"
-Output: {{"mode": "stop_mode"}}
-
-Now convert:
-Input: "{text}"
-Output:"""
-
-    try:
-        res = requests.post(OLLAMA_URL, json={
-            "model":  OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json",
-        }, timeout=60)
-
-        raw    = res.json().get("response", "{}")
-        parsed = json.loads(raw)
-        print(f"[Llama] intent input='{text}' → {parsed}")
-
-    except Exception as e:
-        print(f"[Llama] intent 실패: {e}")
-        parsed = {}
-
-    mode = parsed.get("mode", "move")
-    if mode not in ("move", "trace", "avoid", "greet", "stop_mode"):
-        mode = "move"
-
+    if mode == "action":
+        return {
+            "mode": "action",
+            "command": d.get("command") or "stop",
+            "speed": float(d["speed"]) if d.get("speed") is not None else 0.3,
+            "duration": float(d["duration"]) if d.get("duration") is not None else 2.0,
+            "target_class": None,
+        }
     if mode == "trace":
         return {
-            "mode":         "trace",
-            "target_class": parsed.get("target_class", "person"),
+            "mode": "trace",
+            "command": None,
+            "speed": None,
+            "duration": None,
+            "target_class": d.get("target_class") or "person",
         }
+    # detection
+    return {
+        "mode": "detection",
+        "command": None,
+        "speed": None,
+        "duration": None,
+        "target_class": None,
+    }
 
-    if mode == "avoid":
-        return {"mode": "avoid"}
 
-    if mode == "greet":
-        return {"mode": "greet"}
+def _fallback(text: str) -> dict:
+    t = text.lower()
 
-    if mode == "stop_mode":
-        return {"mode": "stop_mode"}
+    if any(w in t for w in ("follow", "track", "chase", "trace", "pursue")):
+        return {"mode": "trace", "command": None, "speed": None, "duration": None, "target_class": "person"}
+    if any(w in t for w in ("detect", "greet", "wave")):
+        return {"mode": "detection", "command": None, "speed": None, "duration": None, "target_class": None}
 
-    # move: steps 정제
-    raw_steps = parsed.get("steps", [])
-    steps = []
-    for item in raw_steps:
-        command = item.get("command", "stop")
-        if command not in LIMO_COMMANDS:
-            command = "stop"
-        duration_raw = item.get("duration")
-        steps.append({
-            "command":  command,
-            "duration": float(duration_raw) if duration_raw is not None else 2.0,
-        })
+    # Movement keyword matching
+    if any(w in t for w in ("forward", "ahead", "straight", "front")):
+        if "slow" in t:
+            cmd = "go straight slow"
+        elif any(w in t for w in ("fast", "quick", "speed")):
+            cmd = "go straight fast"
+        else:
+            cmd = "go straight"
+    elif any(w in t for w in ("back", "backward", "reverse")):
+        cmd = "move back slow" if "slow" in t else "move back"
+    elif "sharp left" in t:
+        cmd = "sharp left"
+    elif "sharp right" in t:
+        cmd = "sharp right"
+    elif "curve left" in t:
+        cmd = "curve left"
+    elif "curve right" in t:
+        cmd = "curve right"
+    elif any(w in t for w in ("rotate left", "spin left")):
+        cmd = "rotate left"
+    elif any(w in t for w in ("rotate right", "spin right")):
+        cmd = "rotate right"
+    elif "left" in t:
+        cmd = "turn left"
+    elif "right" in t:
+        cmd = "turn right"
+    else:
+        cmd = "stop"
 
-    if not steps:
-        steps = [{"command": "stop", "duration": 0.0}]
+    # Extract duration if mentioned (e.g. "for 3 seconds")
+    duration = 2.0
+    m = re.search(r'(\d+(?:\.\d+)?)\s*(?:second|sec|s\b)', t)
+    if m:
+        duration = float(m.group(1))
 
-    return {"mode": "move", "steps": steps}
+    return {"mode": "action", "command": cmd, "speed": 0.5, "duration": duration, "target_class": None}

@@ -1,53 +1,26 @@
 from django.db import models
 
-# Create your models here.
-class NaturalIntent(models.Model):
-      user = models.CharField(max_length=20)
-      intent = models.CharField(max_length=50)
-      timestamp = models.DateTimeField()
 
-      def __str__(self):
-            return self.user + ":" + self.intent
-      
-
-class NetworkIntent(models.Model):
-      name = models.CharField(max_length=100, null=True, blank=True)
-      mac_address = models.CharField(max_length=17, null=True, blank=True)
-
-      ipv4_start = models.GenericIPAddressField(protocol='IPv4', null=True, blank=True)
-      ipv4_end = models.GenericIPAddressField(protocol='IPv4', null=True, blank=True)
-      ipv6_start = models.GenericIPAddressField(protocol='IPv6', null=True, blank=True)
-      ipv6_end = models.GenericIPAddressField(protocol='IPv6', null=True, blank=True)
-
-      def __str__(self):
-            return self.name + "/" + self.mac_address + self.ipv4_start + "~" + self.ipv4_end + "/" + self.ipv6_start + "~" + self.ipv6_end
-
-class ApplicationIntent(models.Model):
-      user_label = models.CharField(max_length=30, null=True, blank=True)
-      expectation_id = models.CharField(max_length=10, null=True, blank=True)
-      expectation_verb = models.CharField(max_length=10, null=True, blank=True)
-      object_type = models.CharField(max_length=10, null=True, blank=True)
-
-      context_attribute = models.CharField(max_length=30, null=True, blank=True)
-      context_condition = models.CharField(max_length=30, null=True, blank=True)
-      context_targer_id = models.JSONField(null=True, blank=True)
-
-      target_name = models.CharField(max_length=30, null=True, blank=True)
-      target_condition = models.CharField(max_length=30, null=True, blank=True)
-      target_value = models.IntegerField(null=True, blank=True)
-
-      priority = models.IntegerField(null=True, blank=True)
-      location = models.CharField(max_length=30, null=True, blank=True)
-      observation_period = models.IntegerField(null=True, blank=True)
-      report_reference = models.CharField(max_length=30, null=True, blank=True)
-
-class PolicyIntent(models.Model):
-    action = models.CharField(max_length=100)
-    expectation_object = models.CharField(max_length=200)
-    expectation_target = models.CharField(max_length=200)
-
-    head = models.CharField(max_length=200)
-    relation = models.CharField(max_length=200)
-    tail = models.CharField(max_length=200)
-
+class IntentLog(models.Model):
+    input_text = models.TextField()
+    intent_json = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"IntentLog({self.id}): {self.input_text[:40]}"
+
+
+class ActionLog(models.Model):
+    intent_json = models.TextField()
+    steps_json = models.TextField()
+    results_json = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"ActionLog({self.id}) @ {self.created_at}"

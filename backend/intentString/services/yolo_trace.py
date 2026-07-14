@@ -1,202 +1,130 @@
 """
-yolo_trace.py - 특정 물체를 실시간으로 추적하는 동작
+Trace session (YOLO loop).
 
-구조:
-  Thread 1 (_detection_loop): 카메라 프레임 → YOLO 추론 → 명령 결정 → _current_cmd 업데이트
-  Thread 2 (_publish_loop)  : _current_cmd를 10Hz로 LIMO에 전송
-
-이동 속도/방향은 ACTION_MAP 테이블 기반 (팀 합의).
-YOLO는 어떤 명령을 선택할지만 결정.
+Loop:
+  1. Grab frame from LIMO camera snapshot
+  2. YOLO inference → find target class
+  3. Compute frame-adjust command (center horizontally, maintain distance)
+  4. Publish cmd_vel via shared RosBridge
+  5. Repeat until stopped
 """
-
-import time
 import threading
+import time
+from typing import Optional
 
-from .yolo_base import get_model, read_frame, create_ws, ws_publish, STOP_CMD
-from .connection import ACTION_MAP
+import cv2
+import numpy as np
+import requests
 
-# ── 추적 판단 임계값 ─────────────────────────────────────────────────────────
-CONF_THRESHOLD  = 0.5    # 이 신뢰도 이하면 감지 무시
-SIZE_TOO_CLOSE  = 0.30   # 박스가 화면의 30% 이상 → 너무 가까움 → 후진
-SIZE_TOO_FAR    = 0.03   # 박스가 화면의 3% 이하  → 너무 멈 → 직진
-LOST_TIMEOUT    = 2.0    # 물체가 안 보인 뒤 정지까지 대기 시간 (초)
-DETECT_HZ       = 8      # 감지 루프 주파수
+from .config import SNAPSHOT_URL, YOLO_MODEL_PATH, YOLO_CONFIDENCE, FRAME_CENTER_THRESHOLD
+from .rosbridge import bridge
 
-# ── 모듈 상태 ─────────────────────────────────────────────────────────────────
-_ws          = None
-_thread_stop = threading.Event()
-_current_cmd = None
-_cmd_lock    = threading.Lock()
-
-_state = {
-    "running":      False,
-    "target_class": "person",
-    "detection": {
-        "class":      None,
-        "confidence": 0.0,
-        "position":   None,    # "left" | "center" | "right"
-        "size_ratio": 0.0,
-        "command":    "stop",
-        "lost":       False,
-    },
-}
+_SEARCH_AZ = 0.3       # rad/s when target not visible
+_CLOSE_RATIO = 0.65    # bbox_height/frame_height → too close
+_FAR_RATIO = 0.25      # bbox_height/frame_height → too far
+_APPROACH_SPEED = 0.3  # m/s toward target
+_BACKOFF_SPEED = 0.2   # m/s away from target
+_TURN_GAIN = 0.3       # rad/s per lateral error unit
 
 
-# ── 추적 명령 결정 (테이블 키 반환) ──────────────────────────────────────────
+class TraceSession:
+    def __init__(self):
+        self._running = False
+        self._target_class = "person"
+        self._thread: Optional[threading.Thread] = None
 
-def _get_track_command(cx, box_w, box_h, frame_w, frame_h, conf):
-    """물체 위치·크기를 보고 ACTION_MAP 키 중 하나를 반환."""
-    if conf < CONF_THRESHOLD:
-        return "stop"
+    @property
+    def running(self) -> bool:
+        return self._running
 
-    size_ratio = (box_w * box_h) / (frame_w * frame_h)
-    ratio      = cx / frame_w
+    def start(self, target_class: str = "person") -> None:
+        if self._running:
+            self.stop()
+        self._target_class = target_class
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        print(f"[Trace] Session started — target: {target_class}")
 
-    # 너무 가까우면 후진
-    if size_ratio > SIZE_TOO_CLOSE:
-        return "move back"
+    def stop(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=3)
+        print("[Trace] Session stopped")
 
-    # 물체가 왼쪽 → 왼쪽으로 회전해서 따라가기
-    if ratio < 0.35:
-        return "turn left"
+    # ── internal ──────────────────────────────────────────────────────────
 
-    # 물체가 오른쪽 → 오른쪽으로 회전해서 따라가기
-    if ratio > 0.65:
-        return "turn right"
-
-    # 물체가 중앙에 있고 너무 멀면 직진
-    if size_ratio < SIZE_TOO_FAR:
-        return "go straight"
-
-    # 중앙에 있고 적정 거리면 정지 (유지)
-    return "stop"
-
-
-# ── 스레드 함수들 ─────────────────────────────────────────────────────────────
-
-def _detection_loop():
-    """카메라 읽기 + YOLO 추론을 반복하며 _current_cmd를 업데이트."""
-    global _current_cmd
-    model     = get_model()
-    last_seen = time.time()
-
-    while not _thread_stop.is_set():
-        if not _state["running"]:
-            time.sleep(0.1)
-            continue
-
-        ret, frame = read_frame()
-        if not ret:
-            time.sleep(0.1)
-            continue
-
-        target  = _state["target_class"]
-        results = model(frame, verbose=False)
-        boxes   = results[0].boxes
-        matched = [b for b in (boxes or [])
-                   if model.names[int(b.cls[0])] == target
-                   and float(b.conf[0]) >= CONF_THRESHOLD]
-
-        if matched:
-            best         = max(matched, key=lambda b: float(b.conf[0]))
-            x1, y1, x2, y2 = best.xyxy[0]
-            cx           = float((x1 + x2) / 2)
-            box_w        = float(x2 - x1)
-            box_h        = float(y2 - y1)
-            conf         = float(best.conf[0])
-            size_ratio   = (box_w * box_h) / (frame.shape[1] * frame.shape[0])
-            ratio        = cx / frame.shape[1]
-            pos          = "left" if ratio < 0.35 else ("right" if ratio > 0.65 else "center")
-            command      = _get_track_command(cx, box_w, box_h, frame.shape[1], frame.shape[0], conf)
-
-            _state["detection"].update({
-                "class":      target,
-                "confidence": round(conf, 2),
-                "position":   pos,
-                "size_ratio": round(size_ratio, 3),
-                "command":    command,
-                "lost":       False,
-            })
-            print(f"[TRACE] {target} ({conf:.2f}) {pos} size={size_ratio:.3f} → {command}")
-
-            with _cmd_lock:
-                _current_cmd = ACTION_MAP[command]
-
-            last_seen = time.time()
-
-        else:
-            if time.time() - last_seen > LOST_TIMEOUT:
-                _state["detection"]["lost"] = True
-                with _cmd_lock:
-                    _current_cmd = STOP_CMD
-
-        time.sleep(1.0 / DETECT_HZ)
-
-
-def _publish_loop():
-    """10Hz로 현재 명령을 LIMO에 전송."""
-    global _ws
-    while not _thread_stop.is_set():
-        if _state["running"]:
-            with _cmd_lock:
-                cmd = _current_cmd
-            if cmd is not None and _ws is not None:
-                try:
-                    ws_publish(_ws, cmd)
-                except Exception as e:
-                    print(f"[TRACE] publish 실패: {e}")
-                    _ws = None
-        time.sleep(0.1)
-
-
-# ── 공개 API ─────────────────────────────────────────────────────────────────
-
-def start(target_class="person"):
-    global _ws, _current_cmd
-    _state["running"]           = True
-    _state["target_class"]      = target_class
-    _state["detection"]["lost"] = False
-
-    get_model()
-
-    try:
-        _ws = create_ws()
-    except Exception as e:
-        print(f"[TRACE] rosbridge 연결 실패: {e}")
-        _ws = None
-
-    _thread_stop.clear()
-    _current_cmd = STOP_CMD
-
-    threading.Thread(target=_detection_loop, daemon=True).start()
-    threading.Thread(target=_publish_loop,   daemon=True).start()
-
-    print(f"[TRACE] 시작 - 추적 대상: {target_class}")
-    return True
-
-
-def stop():
-    global _ws, _current_cmd
-    _state["running"] = False
-    _thread_stop.set()
-    time.sleep(0.2)
-
-    if _ws is not None:
+    def _loop(self) -> None:
         try:
-            ws_publish(_ws, STOP_CMD)
-            _ws.close()
-        except Exception:
-            pass
-        _ws = None
+            from ultralytics import YOLO
+            model = YOLO(YOLO_MODEL_PATH)
+            bridge.ensure_connected()
+            print(f"[Trace] Loop running — target: {self._target_class}")
 
-    _current_cmd = None
-    print("[TRACE] 정지")
-    return True
+            no_frame_count = 0
+            while self._running:
+                frame = _fetch_frame()
+                if frame is None:
+                    no_frame_count += 1
+                    if no_frame_count % 10 == 1:
+                        print(f"[Trace] Camera fetch failed ({no_frame_count}x) — {SNAPSHOT_URL}")
+                    time.sleep(0.5)
+                    continue
+                no_frame_count = 0
+
+                results = model(frame, conf=YOLO_CONFIDENCE, verbose=False)
+                targets = [
+                    box
+                    for r in results
+                    for box in r.boxes
+                    if model.names[int(box.cls)] == self._target_class
+                ]
+
+                if not targets:
+                    bridge.publish_cmd_vel(0.0, _SEARCH_AZ)
+                    time.sleep(0.3)
+                    continue
+
+                # Best confidence target
+                best = max(targets, key=lambda b: float(b.conf))
+                x1, y1, x2, y2 = (int(v) for v in best.xyxy[0])
+                cx = (x1 + x2) // 2
+                bbox_h = y2 - y1
+                fw, fh = frame.shape[1], frame.shape[0]
+
+                offset = cx - fw // 2
+                if abs(offset) > FRAME_CENTER_THRESHOLD:
+                    angular_z = _TURN_GAIN if offset < 0 else -_TURN_GAIN
+                else:
+                    angular_z = 0.0
+
+                ratio = bbox_h / fh
+                if ratio < _FAR_RATIO:
+                    linear_x = _APPROACH_SPEED
+                elif ratio > _CLOSE_RATIO:
+                    linear_x = -_BACKOFF_SPEED
+                else:
+                    linear_x = 0.0
+
+                print(f"[Trace] target found — offset={offset} ratio={ratio:.2f} lx={linear_x} az={angular_z}")
+                bridge.publish_cmd_vel(linear_x, angular_z)
+                time.sleep(0.1)
+
+        except Exception as e:
+            print(f"[Trace] Loop error: {e}")
+        finally:
+            bridge.stop_robot()
+            print("[Trace] Loop exited")
 
 
-def get_status():
-    return {
-        "running":      _state["running"],
-        "target_class": _state["target_class"],
-        "detection":    _state["detection"],
-    }
+def _fetch_frame() -> Optional[np.ndarray]:
+    try:
+        resp = requests.get(SNAPSHOT_URL, timeout=2)
+        arr = np.frombuffer(resp.content, np.uint8)
+        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
+# Module-level singleton
+trace_session = TraceSession()

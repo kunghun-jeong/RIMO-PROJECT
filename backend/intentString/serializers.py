@@ -1,22 +1,14 @@
 from rest_framework.serializers import ModelSerializer
-from .models import NaturalIntent, NetworkIntent, ApplicationIntent, PolicyIntent
+from .models import IntentLog, ActionLog
 
-class NaturalIntentSerializer(ModelSerializer):
-      class Meta:
-            model = NaturalIntent
-            fields = ['user', 'intent', 'timestamp']
 
-class NetworkIntentSerializer(ModelSerializer):
-      class Meta:
-            model = NetworkIntent
-            fields = '__all__'
+class IntentLogSerializer(ModelSerializer):
+    class Meta:
+        model = IntentLog
+        fields = ['id', 'input_text', 'intent_json', 'created_at']
 
-class ApplicationIntentSerializer(ModelSerializer):
-     class Meta:
-            model = ApplicationIntent
-            fields = '__all__'
 
-class PolicyIntentSerializer(ModelSerializer):
-      class Meta:
-            model = PolicyIntent
-            fields = '__all__'
+class ActionLogSerializer(ModelSerializer):
+    class Meta:
+        model = ActionLog
+        fields = ['id', 'intent_json', 'steps_json', 'results_json', 'created_at']
