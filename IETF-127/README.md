@@ -32,4 +32,4 @@ Results are saved to `outputs/` (git-ignored): one JSON per request plus `log.js
   from the text alone and marked `source: rules`.
 - `intent/sink.py` is where results go. Only a local-file sink exists; HTTP/A2A delivery is not implemented yet.
 
-Requires `requests`. Default model: `llama3.1:8b` (`intent/config.py`).
+Requires `requests`. Default model: `qwen2.5vl:3b` via Ollama (`intent/config.py`).

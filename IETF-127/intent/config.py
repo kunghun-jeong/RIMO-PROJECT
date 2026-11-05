@@ -1,5 +1,5 @@
 OLLAMA_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1:8b"
+OLLAMA_MODEL = "qwen2.5vl:3b"  # per the Edge team (ICTC2026 setup)
 OLLAMA_TIMEOUT = 60
 LLM_RETRIES = 1  # extra attempts after the first invalid response
 
